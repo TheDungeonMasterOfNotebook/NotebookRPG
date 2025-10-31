@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>Dungeons in the Margins — Dark Gothic (Seeded)</title>
+  <title>Dungeons in the Margins — Legacy of Ash</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,10 +26,12 @@
     <header class="topbar">
       <div>
         <h1>🜂 Dungeons in the Margins</h1>
-        <div class="subtitle">Dark Gothic — Seeded Roguelike Notebook</div>
+        <div class="subtitle">Dark Gothic — Legacy of Ash</div>
       </div>
       <div class="top-actions">
         <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
+        <div class="small muted">Fragments: <span id="fragments">0</span></div>
+        <button id="btnMeta" class="secondary">Meta Shop</button>
         <button id="btnNew" class="secondary">New Run</button>
         <button id="btnReset" class="warn">Reset Save</button>
       </div>
@@ -48,6 +50,7 @@
               <div>Accessory: <span id="slotAccessory">None</span></div>
             </div>
             <div class="relic-row small muted" id="relicRow">Relics: —</div>
+            <div class="small muted" id="alignmentLabel">Alignment: Neutral</div>
           </div>
         </section>
 
@@ -72,7 +75,7 @@
             <button id="btnShop">Shop</button>
             <button id="btnRest" class="secondary">Rest (5g)</button>
             <button id="btnInventory" class="secondary">Inventory</button>
-            <button id="btnCodex" class="secondary">Codex</button>
+            <button id="btnJournal" class="secondary">Journal</button>
             <button id="btnLeaderboard" class="secondary">Leaderboard</button>
           </div>
         </section>
@@ -136,6 +139,40 @@
     <div id="cineBlood" class="blood-runic"></div>
   </div>
 
+  <!-- Modal Panes -->
+  <div id="metaModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Meta Shop — Spend Soul Fragments</h3>
+      <div id="metaContent" class="modal-body"></div>
+      <div class="modal-actions">
+        <button onclick="closeMeta()" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="journalModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Journal</h3>
+      <div id="journalContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeJournal()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <div id="summaryModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Run Summary</h3>
+      <div id="summaryContent" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="btnCopySeed" class="secondary">Copy Seed Link</button>
+        <button onclick="closeSummary()" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio (placeholders, user can replace sources with real files) -->
+  <audio id="bgm" loop preload="auto"></audio>
+  <audio id="sfx" preload="auto"></audio>
+
   <script src="game.js"></script>
 
   <script>
@@ -144,7 +181,6 @@
       const overlay = document.getElementById('seedOverlay');
       const app = document.getElementById('app');
       const seedInput = document.getElementById('seedInput');
-      const seedDisplay = document.getElementById('seedDisplay');
       document.getElementById('btnStartSeed').onclick = ()=> {
         let s = seedInput.value.trim();
         if(s === '') { alert('Please enter numbers or press Random Seed'); return; }
@@ -159,7 +195,7 @@
       };
       function startWithSeed(s){
         window.INIT_SEED = s;
-        seedDisplay.innerText = s;
+        if($('seedDisplay')) $('seedDisplay').innerText = s;
         if(window.gameInit) window.gameInit(s);
       }
       if(window.INIT_SEED){ overlay.style.display = 'none'; app.setAttribute('aria-hidden','false'); }
