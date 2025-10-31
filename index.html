@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>Dungeons in the Margins — Legacy of Ash</title>
+  <title>Dungeons in the Margins — Legacy of Ash (Beta Phase 4)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
         <button id="btnStartSeed" class="accent">Begin Fate</button>
         <button id="btnRandomSeed" class="secondary">Random Seed</button>
       </div>
-      <div class="small muted" style="margin-top:8px">Seed will appear in the UI so you can copy/share it.</div>
+      <div class="small muted" style="margin-top:8px">Seed will appear in the top-right so you can copy/share it.</div>
     </div>
   </div>
 
@@ -26,13 +26,14 @@
     <header class="topbar">
       <div>
         <h1>🜂 Dungeons in the Margins</h1>
-        <div class="subtitle">Dark Gothic — Legacy of Ash</div>
+        <div class="subtitle">Legacy of Ash (Beta Phase 4)</div>
       </div>
       <div class="top-actions">
         <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
         <div class="small muted">Fragments: <span id="fragments">0</span></div>
         <button id="btnMeta" class="secondary">Meta Shop</button>
         <button id="btnNew" class="secondary">New Run</button>
+        <button id="btnCredits" class="secondary">Credits</button>
         <button id="btnReset" class="warn">Reset Save</button>
       </div>
     </header>
@@ -139,7 +140,7 @@
     <div id="cineBlood" class="blood-runic"></div>
   </div>
 
-  <!-- Modal Panes -->
+  <!-- Modals -->
   <div id="metaModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
       <h3>Meta Shop — Spend Soul Fragments</h3>
@@ -169,9 +170,23 @@
     </div>
   </div>
 
-  <!-- Audio (placeholders, user can replace sources with real files) -->
-  <audio id="bgm" loop preload="auto"></audio>
-  <audio id="sfx" preload="auto"></audio>
+  <!-- Credits Modal -->
+  <div id="creditsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Credits</h3>
+      <div class="modal-body">
+        <p><strong>Created by:</strong> Jeremy Frith</p>
+        <p><strong>Design & Story:</strong> Jeremy Frith</p>
+        <p><strong>Development Assistance:</strong> GPT-5 Thinking mini</p>
+        <p><strong>Theme:</strong> Dark Gothic — Legacy of Ash</p>
+        <p><strong>Special Thanks:</strong> Notebook RPG Community</p>
+        <p class="small muted">Beta Phase 4 — Thank you for testing. Report bugs via export log.</p>
+      </div>
+      <div class="modal-actions">
+        <button id="closeCredits" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script src="game.js"></script>
 
