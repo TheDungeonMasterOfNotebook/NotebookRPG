@@ -1,12 +1,11 @@
-/* Dark Gothic — Legacy of Ash theme */
+/* Dark Gothic — Legacy of Ash (Beta Phase 4) */
 :root{
   --bg1:#040105; --bg2:#12060a;
-  --runic:#8a0033;   /* blood-runic accent */
+  --runic:#8a0033;
   --muted:#9aa3b8;
   --panel-glass:rgba(255,255,255,0.03);
   --fragments:#ffd580;
-  --align-good:#d7f7e0;
-  --align-bad:#ffd7df;
+  --accent:#6e1f3a;
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#efeef2}
@@ -43,16 +42,8 @@ button:active{transform:translateY(1px)}
 .item-row{display:flex;justify-content:space-between;align-items:center;padding:6px;border-bottom:1px dashed rgba(255,255,255,0.02)}
 .save-toast{position:fixed;right:18px;bottom:18px;background:linear-gradient(180deg,rgba(138,0,51,0.06),rgba(138,0,51,0.03));padding:8px 10px;border-radius:8px;border:1px solid rgba(138,0,51,0.08);color:var(--muted);font-weight:800;opacity:0;transform:translateY(10px);transition:all .35s}
 .save-toast.show{opacity:1;transform:translateY(0);box-shadow:0 10px 30px rgba(138,0,51,0.08)}
-.rarity-common{color:#b0b0b0}
-.rarity-uncommon{color:#3fa34d}
-.rarity-rare{color:#2979ff}
-.rarity-epic{color:#a020f0}
-.rarity-legendary{color:#ffcc00}
-
-/* relic row */
 .relic-row{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .relic-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(138,0,51,0.06);font-weight:700;color:#ffdfe6;box-shadow:0 4px 18px rgba(138,0,51,0.06)}
-
 /* cinematic overlay */
 .cine-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none}
 .cine-overlay.hidden{display:none}
@@ -77,6 +68,10 @@ button:active{transform:translateY(1px)}
 .modal-card{background:linear-gradient(180deg,#081018,#0b0a12);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:520px}
 .modal-body{max-height:45vh;overflow:auto;padding:6px;margin-top:8px}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+
+/* credits specific */
+.modal-card h3{margin:0 0 6px 0;color:var(--runic)}
+.modal-card p{margin:6px 0}
 
 /* responsive */
 @media (max-width:920px){ .layout{flex-direction:column} .left{width:auto} .combat-actions button{flex-basis:100%} }
