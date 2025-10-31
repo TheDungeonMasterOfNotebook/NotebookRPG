@@ -1,9 +1,9 @@
-/* game.js — Legacy of Ash (Phase 3)
-   - seeded RNG (mulberry32)
-   - events, relics, bosses (multi-phase)
-   - cinematic dark-gothic overlays
+/* game.js — Legacy of Ash (Beta Phase 4)
+   Final integrated bundle:
+   - seeded RNG, events, relics, bosses, spells, equipment
    - alignment, journal, soul fragments (meta), meta shop
-   - audio placeholders, autosave/load/reset, UI wiring
+   - autosave/load/reset, seeded runs, cinematic overlays
+   - Credits modal added; no audio tags per request
 */
 
 /* ---------- DOM helpers ---------- */
@@ -31,7 +31,7 @@ const SAVE_KEY = 'dim_legacy_of_ash_v1';
 const META_KEY = 'dim_legacy_meta';
 const LEADER_KEY = 'dim_legacy_leader_v1';
 
-/* ---------- Rarity/items (kept minimal) ---------- */
+/* ---------- Rarity/items ---------- */
 const RARITIES = [
   { key:'Common', css:'rarity-common', mult:1.0, chance:0.45 },
   { key:'Uncommon', css:'rarity-uncommon', mult:1.2, chance:0.25 },
@@ -46,7 +46,7 @@ function makeItem(base,type,stats,cost){
 }
 function equipmentPool(){ return [ makeItem("Iron Sword","weapon",{atk:3},25), makeItem("Steel Sword","weapon",{atk:5},50), makeItem("Leather Armor","armor",{def:2},20), makeItem("Iron Armor","armor",{def:4},45), makeItem("Amulet of Vitality","accessory",{hp:10},40), makeItem("Ring of Power","accessory",{atk:2},40) ]; }
 
-/* ---------- Relics & Effects ---------- */
+/* ---------- Relics ---------- */
 function makeRelic(name,rarity,desc,id,effectFn){
   return { name, rarity, desc, id, effectFn };
 }
@@ -85,39 +85,22 @@ const BOSSES = [
     ], reward:'dragon_sigil' }
 ];
 
-/* ---------- State (game + meta) ---------- */
+/* ---------- State ---------- */
 let state = {
-  seed: null,
-  runId: Date.now(),
-  classKey: null,
-  player: null,
-  floorMap: {},
-  currentEnemy: null,
-  inCombat: false,
-  relics: [],
-  legacyRelics: JSON.parse(localStorage.getItem(META_KEY) || '[]') || [],
-  alignment: 0, // -100..+100
-  journal: [],
-  soulFragments: parseInt(localStorage.getItem(META_KEY||'0_frag')||'0') || 0,
-  achievements: JSON.parse(localStorage.getItem('dim_achievements')||'{}'),
+  seed: null, runId: Date.now(), classKey:null, player:null, floorMap:{}, currentEnemy:null, inCombat:false,
+  relics:[], legacyRelics: JSON.parse(localStorage.getItem(META_KEY) || '[]') || [], alignment:0, journal:[],
+  soulFragments: parseInt(localStorage.getItem('dim_fragments')||'0') || 0, achievements: JSON.parse(localStorage.getItem('dim_achievements')||'{}') || {},
   ngPlus:false, endless:false, leaderboard: JSON.parse(localStorage.getItem(LEADER_KEY) || '[]')
 };
 
-/* ---------- Audio stubs ---------- */
-let audioCtx=null;
-function beep(freq=440,t=0.04,vol=0.05){ try{ if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type='sine'; o.frequency.value = freq; g.gain.value = vol; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + t);}catch(e){} }
-function playBGM(src){ const bg = $('bgm'); if(!bg) return; if(!src){ bg.pause(); bg.src=''; return; } if(bg.src !== src){ bg.src = src; bg.play().catch(()=>{}); } }
-
-/* ---------- Relic application + alignment helpers ---------- */
+/* ---------- Relic application & alignment ---------- */
 function applyRelicEffects(){
-  // reset derived relic-driven state
   state.spellDiscount = 0; state.goldMult = 1; state.dodge = 0; state.fireBonus = 0; state.lifeSteal = 0; state.nullChance = 0; state.aether = false; state.rewind = false;
   for(const r of state.relics.concat(state.legacyRelics||[])){
     const found = RELIC_POOL.find(x=>x.id === (r.id||r));
     if(found && typeof found.effectFn === 'function') found.effectFn(state);
   }
 }
-
 function changeAlignment(delta){
   state.alignment = Math.max(-100, Math.min(100, (state.alignment||0) + delta));
   const lbl = $('alignmentLabel');
@@ -126,7 +109,6 @@ function changeAlignment(delta){
     else if(state.alignment < -30) lbl.innerText = `Alignment: Corrupted (${state.alignment})`;
     else lbl.innerText = `Alignment: Neutral (${state.alignment})`;
   }
-  // UI tint could be controlled by a CSS variable if desired
 }
 
 /* ---------- Derived stats ---------- */
@@ -134,7 +116,7 @@ function derivePlayer(){
   if(!state.player) return;
   applyRelicEffects();
   const p = state.player;
-  p.maxHp = p.baseHp + (p.equip?.accessory?.hp || 0) + (p.equip?.armor?.hp || 0) + (state.baseHpBonus || 0 || 0);
+  p.maxHp = p.baseHp + (p.equip?.accessory?.hp || 0) + (p.equip?.armor?.hp || 0);
   p.attack = p.baseAtk + (p.equip?.weapon?.atk || 0) + (p.equip?.accessory?.atk || 0);
   p.defense = p.baseDef + (p.equip?.armor?.def || 0);
   p.maxMp = Math.max(5, p.mag + 3);
@@ -142,13 +124,14 @@ function derivePlayer(){
   if(p.mp > p.maxMp) p.mp = p.maxMp;
 }
 
-/* ---------- Save / Load / Meta ---------- */
+/* ---------- Save / Load / Reset ---------- */
 function showSaveToast(){ const el = $('saveToast'); if(!el) return; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),900); }
 function fullSave(){
   try{
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
     localStorage.setItem(META_KEY, JSON.stringify(state.legacyRelics || []));
     localStorage.setItem('dim_fragments', String(state.soulFragments || 0));
+    localStorage.setItem('dim_achievements', JSON.stringify(state.achievements || {}));
     showSaveToast();
   }catch(e){ console.warn('save failed', e); }
 }
@@ -157,7 +140,6 @@ function fullLoad(){
   if(!s) return false;
   try{
     const loaded = JSON.parse(s);
-    // preserve legacy relics from storage
     loaded.legacyRelics = JSON.parse(localStorage.getItem(META_KEY) || '[]') || [];
     state = Object.assign(state, loaded);
     if(state.seed) initSeed(state.seed);
@@ -172,6 +154,7 @@ function resetAll(){
   localStorage.removeItem(SAVE_KEY);
   localStorage.removeItem(META_KEY);
   localStorage.removeItem('dim_fragments');
+  localStorage.removeItem('dim_achievements');
   state = { seed:state.seed || null, runId:Date.now(), classKey:null, player:null, floorMap:{}, currentEnemy:null, inCombat:false, relics:[], legacyRelics:[], alignment:0, journal:[], soulFragments:0, achievements:{}, ngPlus:false, endless:false, leaderboard:[] };
   log('🔁 Save and meta reset.');
   fullSave(); renderAll();
@@ -185,20 +168,11 @@ function newRun(classKey, ngPlus=false, endless=false){
     name: classKey, classKey,
     baseHp: cls.baseHp + (ngPlus?2:0), hp: cls.baseHp + (ngPlus?2:0),
     baseAtk: cls.baseAtk + (ngPlus?1:0), baseDef: cls.baseDef, mag: cls.mag,
-    mp:10, xp:0, level:1,
-    gold:12 + (ngPlus?10:0), potions:1, ethers:1,
-    equip:{weapon:null,armor:null,accessory:null},
-    inventory: cls.starter? cls.starter() : [], spells: (cls.spells||[]).slice(),
+    mp:10, xp:0, level:1, gold:12 + (ngPlus?10:0), potions:1, ethers:1,
+    equip:{weapon:null,armor:null,accessory:null}, inventory: cls.starter? cls.starter() : [], spells: (cls.spells||[]).slice(),
     tempDef:0, status:[], floor:1
   };
-  state.classKey = classKey;
-  state.player = player;
-  state.floorMap = {};
-  state.currentEnemy = null;
-  state.inCombat = false;
-  state.relics = [];
-  state.ngPlus = ngPlus;
-  state.endless = endless;
+  state.classKey = classKey; state.player = player; state.floorMap = {}; state.currentEnemy = null; state.inCombat = false; state.relics = []; state.ngPlus = ngPlus; state.endless = endless;
   derivePlayer();
   cineShow(`The run is bound by seed ${state.seed}...`,900).then(()=>{ log(`🆕 New run: ${classKey} — seed ${state.seed}`); fullSave(); renderAll(); });
 }
@@ -278,7 +252,6 @@ function playerAttack(){
     log(`⚔️ You attack for ${dmg} damage.`);
     if(state.lifeSteal){ const heal = Math.max(1, Math.round(dmg * state.lifeSteal)); state.player.hp = Math.min(maxHpLocal(), state.player.hp + heal); log(`💉 Lifesteal: +${heal} HP.`); }
   }
-  beep(420,0.04,0.04);
   if(state.currentEnemy.hp <= 0) return onVictory();
   enemyTurn(); fullSave(); renderAll();
 }
@@ -331,7 +304,6 @@ function enemyTurn(){
   const e = state.currentEnemy;
   if(e.isBoss && e.phases){
     const move = rChoice(e.moves || e.phases[e.phaseIndex].moves);
-    // interpret a few named moves:
     if(move === 'Siphon'){ const dmg = Math.max(1, e.atk - (state.player.defense||0)); state.player.hp = Math.max(0, state.player.hp - dmg); e.hp = Math.max(0, e.hp + Math.min(6, Math.floor(dmg/2))); log(`🖤 ${e.name} uses Siphon — ${dmg} dmg and heals.`); }
     else if(move === 'Dark Slash'){ const dmg = Math.max(1, e.atk + rInt(-1,1) - (state.player.defense||0)); state.player.hp = Math.max(0, state.player.hp - dmg); log(`🔪 ${e.name} uses Dark Slash — ${dmg} dmg.`); }
     else if(move === 'Abyss Nova'){ const dmg = Math.max(2, e.atk + 4 - (state.player.defense||0)); state.player.hp = Math.max(0, state.player.hp - dmg); log(`💥 ${e.name} unleashes Abyss Nova — ${dmg} dmg.`); }
@@ -351,7 +323,7 @@ function enemyTurn(){
   if(state.currentEnemy && state.currentEnemy.isBoss) checkBossPhase();
 }
 
-/* ---------- Boss phases ---------- */
+/* ---------- Boss phase transition ---------- */
 function checkBossPhase(){
   const e = state.currentEnemy;
   if(!e || !e.phases) return;
@@ -364,31 +336,26 @@ function checkBossPhase(){
   }
 }
 
-/* ---------- Victory & drops ---------- */
+/* ---------- Victory ---------- */
 function onVictory(){
   const e = state.currentEnemy; const isBoss = !!e && !!e.isBoss;
   const goldGain = rInt(8,16) + (state.player.floor||1)*3 + (isBoss?18:0);
   state.player.gold = (state.player.gold||0) + Math.round(goldGain * (state.goldMult||1));
   log(`🏆 Defeated ${e.name}! +${Math.round(goldGain * (state.goldMult||1))} gold.`);
   if(isBoss){
-    // award boss relic if template says
     const rewardId = e.reward;
     if(rewardId){
       const relicTpl = RELIC_POOL.find(r=>r.id===rewardId);
       if(relicTpl){ state.relics.push({id:relicTpl.id, name:relicTpl.name}); log(`🎁 Boss relic: ${relicTpl.name}`); applyRelicEffects(); }
     }
-    // drop gear
     const pool = equipmentPool(); const reward = rChoice(pool); state.player.inventory = state.player.inventory||[]; state.player.inventory.push(reward);
     state.player.hp = Math.min(maxHpLocal(), state.player.hp + 12);
-    // grant journal entry
     addJournal(`${e.name} was vanquished. A fragment of the Order's past is revealed.`);
-    // award soul fragments
     state.soulFragments = (state.soulFragments||0) + Math.max(3, Math.floor((state.player.floor||1)/2));
   } else {
     if(rnd() < 0.28){ state.player.potions = (state.player.potions||0)+1; log('🧴 Found a potion.'); }
     else if(rnd() < 0.2){ const pool = equipmentPool(); const it = rChoice(pool); state.player.inventory.push(it); log(`🎁 Drop: ${it.rarity} ${it.baseName}`); }
   }
-  // XP & level
   const xpGain = 5 + (state.player.floor||1);
   state.player.xp = (state.player.xp||0) + xpGain;
   checkLevel();
@@ -406,7 +373,7 @@ function checkLevel(){
   }
 }
 
-/* ---------- Chests / Shops / Events ---------- */
+/* ---------- Chests / Shop / Events ---------- */
 function openChest(){ if(!state.player) return; if(rnd() < 0.55){ const pool = equipmentPool(); const it = rChoice(pool); state.player.inventory = state.player.inventory||[]; state.player.inventory.push(it); log(`🎁 Chest: Found ${it.rarity} ${it.baseName}`); } else { const g = rInt(6,26) + (state.player.floor||1)*2; state.player.gold = (state.player.gold||0) + Math.round(g * (state.goldMult||1)); log(`💰 Chest: +${Math.round(g * (state.goldMult||1))} gold.`); } fullSave(); renderAll(); }
 
 let lastShop = [];
@@ -419,7 +386,7 @@ function openShop(){ if(state.inCombat){ log('Cannot shop during combat.'); retu
 function buy(idx){ const it = lastShop[idx]; if(!it) return; if(!state.player){ log('Start a run first'); return; } if(state.player.gold < it.cost){ log('Not enough gold.'); return; } state.player.gold -= it.cost; if(it.type==='consumable'){ if(it.baseName==='Potion') state.player.potions=(state.player.potions||0)+1; else if(it.baseName==='Ether') state.player.ethers=(state.player.ethers||0)+1; log(`Bought ${it.baseName}`); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(it); log(`Bought ${it.rarity||''} ${it.baseName}`); } fullSave(); renderAll(); }
 function closeShopPanel(){ $('shopPanel').innerHTML = `<div class="small">Shop & events appear while exploring.</div>`; renderAll(); }
 
-/* ---------- Events: expanded & narrative ---------- */
+/* ---------- Events & Journal ---------- */
 function addJournal(text){ state.journal = state.journal || []; state.journal.unshift({text, time: new Date().toISOString()}); fullSave(); }
 const EVENTS = [
   { id:'whisper_door', text:'A door hums with whispers. Speak your name into it or remain silent?', choices:[
@@ -428,7 +395,7 @@ const EVENTS = [
   ]},
   { id:'cursed_fountain', text:'A cursed fountain bubbles. Drink to heal but risk a curse?', choices:[
       { label:'Drink', func: s=>{ if(rnd()<0.5){ s.player.hp = Math.min(maxHpLocal(), s.player.hp + 12); addJournal('The fountain healed you painfully.'); log('It heals you...'); } else { s.player.status = s.player.status || []; s.player.status.push({k:'poison',t:3,p:2}); changeAlignment(-3); addJournal('The fountain cursed your blood.'); log('A curse! Poisoned.'); } } },
-      { label:'Pass', func: s=>{ log('You pass the fountain.'); } }
+      { label:'Pass', func: s=>{ addJournal('You pass the fountain in silence.'); log('You pass the fountain.'); } }
   ]},
   { id:'wandering_merchant', text:'A hooded merchant offers a relic for gold (rare chance). Buy or bargain?', choices:[
       { label:'Buy (20g)', func: s=>{ if(s.player.gold < 20){ log('Not enough gold.'); return; } s.player.gold -= 20; if(rnd()<0.30){ const r = rChoice(RELIC_POOL); s.relics.push({id:r.id,name:r.name}); applyRelicEffects(); addJournal('You purchased a strange relic from the merchant.'); log(`They hand you ${r.name}.`); } else { const pool = equipmentPool(); s.player.inventory.push(rChoice(pool)); addJournal('You bought a curious trinket.'); log('You bought a trinket (item).'); } } },
@@ -498,7 +465,7 @@ function inspectItem(idx){ const it = state.player.inventory[idx]; if(it) alert(
 
 /* ---------- Helpers ---------- */
 function totalDefLocal(){ return (state.player.baseDef || 0) + (state.player.equip?.armor?.def || 0); }
-function maxHpLocal(){ return (state.player.baseHp || 0) + (state.player.equip?.accessory?.hp || 0) + (state.player.equip?.armor?.hp || 0) + (state.baseHpBonus || 0 || 0); }
+function maxHpLocal(){ return (state.player.baseHp || 0) + (state.player.equip?.accessory?.hp || 0) + (state.player.equip?.armor?.hp || 0); }
 
 /* ---------- Export & Leaderboard ---------- */
 function exportLog(){ const txt = $('log').innerText; const blob = new Blob([txt],{type:'text/plain'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `dim_log_${Date.now()}.txt`; a.click(); URL.revokeObjectURL(url); }
@@ -511,17 +478,13 @@ function renderSpellButtons(){ const container = $('spellRow'); if(!container) r
 function renderRelicsUI(){
   const el = $('relicRow'); if(!el) return; el.innerHTML = ''; const combined = (state.relics||[]).concat(state.legacyRelics||[]); if(combined.length===0){ el.innerText = 'Relics: —'; return; } for(const r of combined){ const pill = document.createElement('div'); pill.className='relic-pill'; pill.innerText = (r.name||r.id); el.appendChild(pill); }
 }
-function renderJournal(){
-  const el = $('journalContent'); if(!el) return; el.innerHTML = ''; const j = state.journal || []; if(j.length===0) el.innerHTML = `<div class="small muted">— No entries yet —</div>`; j.forEach(entry=>{ const d = new Date(entry.time).toLocaleString(); el.innerHTML += `<div style="margin-bottom:8px"><div class="small muted">${d}</div><div>${entry.text}</div></div>`; });
-}
-function renderMeta(){
-  const el = $('metaContent'); if(!el) return;
+function renderJournal(){ const el = $('journalContent'); if(!el) return; el.innerHTML = ''; const j = state.journal || []; if(j.length===0) el.innerHTML = `<div class="small muted">— No entries yet —</div>`; j.forEach(entry=>{ const d = new Date(entry.time).toLocaleString(); el.innerHTML += `<div style="margin-bottom:8px"><div class="small muted">${d}</div><div>${entry.text}</div></div>`; }); }
+function renderMeta(){ const el = $('metaContent'); if(!el) return;
   let html = `<div class="small">Fragments: <strong>${state.soulFragments||0}</strong></div><div style="margin-top:8px">`;
-  // cost examples: unlock legacy relics
   const offers = [
     { id:'legacy_fang', name:'Legacy Soul Eater Fang', cost:6, desc:'Persisting Soul Eater Fang (Epic effect).' , relicId:'fang'},
     { id:'legacy_crown', name:'Legacy Aether Crown', cost:10, desc:'Persisting Aether Crown (Legendary).' , relicId:'crown'},
-    { id:'unlock_mage', name:'Unlock: Arcane Path (starter spell)', cost:4, desc:'Gain a permanent starting spell for Mages.' , relicId:null}
+    { id:'unlock_mage', name:'Unlock: Arcane Path', cost:4, desc:'Meta unlock that grants a persistent arcane boon.' , relicId:null}
   ];
   offers.forEach((o, idx)=>{ html += `<div class="item-row"><div><strong>${o.name}</strong><div class="small muted">${o.desc}</div></div><div><span class="small">${o.cost} fragments</span> <button class="secondary" onclick="buyMeta(${idx})">Buy</button></div></div>`; });
   html += `</div>`;
@@ -537,15 +500,23 @@ function buyMeta(idx){
   if(!o) return; if(state.soulFragments < o.cost){ alert('Not enough Soul Fragments'); return; }
   state.soulFragments -= o.cost;
   if(o.relicId){ const tpl = RELIC_POOL.find(r=>r.id===o.relicId); if(tpl){ state.legacyRelics.push({id:tpl.id,name:tpl.name}); applyRelicEffects(); log(`Meta: purchased legacy relic ${tpl.name}`); addJournal(`A legacy relic, ${tpl.name}, was gained.`); } }
-  else { // unlock: in this simple demo, grant a guaranteed spell to all Mages or add a general relic
-    state.legacyRelics.push({id:'arcane_path', name:'Arcane Path'}); log('Meta: Arcane Path unlocked.'); addJournal('Arcane Path unlocked in the meta.'); 
-  }
+  else { state.legacyRelics.push({id:'arcane_path', name:'Arcane Path'}); log('Meta: Arcane Path unlocked.'); addJournal('Arcane Path unlocked in the meta.'); }
   fullSave(); renderMeta(); renderAll();
 }
 
-/* ---------- Render All ---------- */
+/* ---------- Cinematic overlay ---------- */
+function cineShow(text, ms=1200){
+  const overlay = $('cineOverlay'); const t = $('cineText'); const b = $('cineBlood');
+  if(!overlay || !t || !b){ log(text); return Promise.resolve(); }
+  t.innerHTML = text;
+  overlay.classList.remove('hidden'); overlay.setAttribute('aria-hidden','false');
+  b.style.animation = 'bloodPulse 1.2s ease';
+  t.style.animation = 'cineIn .9s ease forwards';
+  return new Promise(resolve => setTimeout(()=>{ overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden','true'); resolve(); }, ms));
+}
+
+/* ---------- Render all ---------- */
 function renderAll(){
-  // player panel
   if(state.player){
     $('playerName').innerText = state.player.name || '—';
     $('playerClass').innerText = state.classKey || '—';
@@ -568,7 +539,6 @@ function renderAll(){
     $('playerName').innerText = '—';
   }
 
-  // combat UI
   if(state.inCombat && state.currentEnemy){
     $('combatUI').classList.remove('hidden');
     $('enemyName').innerText = state.currentEnemy.name;
@@ -583,30 +553,39 @@ function renderAll(){
     $('encounterText').innerText = 'Explore rooms, fight monsters, collect relics.';
   }
 
-  // relic UI
   renderRelicsUI();
-  // journal & meta
   renderJournal();
   renderMeta();
-  // fragments
   if($('fragments')) $('fragments').innerText = state.soulFragments || 0;
-  // seed display
   if($('seedDisplay')) $('seedDisplay').innerText = state.seed || '—';
   fullSave();
 }
 
-/* ---------- Cinematic overlay ---------- */
-function cineShow(text, ms=1200){
-  const overlay = $('cineOverlay'); const t = $('cineText'); const b = $('cineBlood');
-  if(!overlay || !t || !b){ log(text); return Promise.resolve(); }
-  t.innerHTML = text;
-  overlay.classList.remove('hidden'); overlay.setAttribute('aria-hidden','false');
-  b.style.animation = 'bloodPulse 1.2s ease';
-  t.style.animation = 'cineIn .9s ease forwards';
-  return new Promise(resolve => setTimeout(()=>{ overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden','true'); resolve(); }, ms));
+/* ---------- End-of-run summary ---------- */
+function onRunEnd(){
+  const floors = state.player?.floor || 1;
+  const fragmentsEarned = Math.max(1, Math.floor(floors / 2));
+  state.soulFragments = (state.soulFragments || 0) + fragmentsEarned;
+  const entry = { floor: floors, gold: state.player?.gold || 0, class: state.classKey || 'Unknown', seed: state.seed || '' };
+  const lb = JSON.parse(localStorage.getItem(LEADER_KEY) || '[]'); lb.push(entry); localStorage.setItem(LEADER_KEY, JSON.stringify(lb));
+  state.achievements = state.achievements || {};
+  if(floors >= 10) state.achievements['Deep Delver'] = true;
+  if((state.relics||[]).length >= 3) state.achievements['Relic Hunter'] = true;
+  localStorage.setItem('dim_achievements', JSON.stringify(state.achievements||{}));
+  const sumEl = $('summaryContent'); if(sumEl){
+    let html = `<div class="small">Seed: <code>${state.seed}</code></div>`;
+    html += `<div style="margin-top:8px">Floors cleared: <strong>${floors}</strong></div>`;
+    html += `<div>Fragments earned: <strong>${fragmentsEarned}</strong> (Total: ${state.soulFragments})</div>`;
+    html += `<div style="margin-top:8px">Relics found: ${(state.relics||[]).map(r=>r.name||r.id).join(', ') || '—'}</div>`;
+    html += `<div style="margin-top:8px">Journal entries: ${(state.journal||[]).length}</div>`;
+    html += `<div style="margin-top:12px"><strong>Achievements</strong><div class="small">${Object.keys(state.achievements||{}).filter(k=>state.achievements[k]).join(', ') || '—'}</div></div>`;
+    sumEl.innerHTML = html;
+    $('summaryModal').classList.remove('hidden'); $('summaryModal').setAttribute('aria-hidden','false');
+  }
+  state.player = null; state.floorMap = {}; state.currentEnemy = null; state.inCombat = false; fullSave(); renderAll();
 }
 
-/* ---------- UI bindings ---------- */
+/* ---------- UI wiring ---------- */
 function wireUI(){
   $('btnNew').addEventListener('click', ()=>{ const cls = prompt('New run — choose class: Warrior, Mage, Rogue','Warrior'); if(!cls || !CLASSES[cls]){ alert('Invalid class'); return; } newRun(cls,false,false); });
   $('btnReset').addEventListener('click', resetAll);
@@ -624,48 +603,24 @@ function wireUI(){
   $('btnSpellBack').addEventListener('click', ()=> $('spellMenu').classList.add('hidden'));
   $('btnMeta').addEventListener('click', ()=>{ $('metaModal').classList.remove('hidden'); $('metaModal').setAttribute('aria-hidden','false'); renderMeta(); });
   $('btnCopySeed')?.addEventListener('click', ()=>{ navigator.clipboard.writeText(location.href.split('?')[0] + '?seed=' + encodeURIComponent(state.seed)).then(()=> alert('Seed link copied to clipboard')); });
-  // modal close helpers
+
+  // Credits modal wiring
+  $('btnCredits').addEventListener('click', ()=>{ $('creditsModal').classList.remove('hidden'); $('creditsModal').setAttribute('aria-hidden','false'); });
+  $('closeCredits').addEventListener('click', ()=>{ $('creditsModal').classList.add('hidden'); $('creditsModal').setAttribute('aria-hidden','true'); });
+
+  // modal utility functions
   window.closeMeta = ()=>{ $('metaModal').classList.add('hidden'); $('metaModal').setAttribute('aria-hidden','true'); };
   window.closeJournal = ()=>{ $('journalModal').classList.add('hidden'); $('journalModal').setAttribute('aria-hidden','true'); };
   window.closeSummary = ()=>{ $('summaryModal').classList.add('hidden'); $('summaryModal').setAttribute('aria-hidden','true'); };
+
+  // ESC to close modals
+  document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape'){ ['metaModal','journalModal','summaryModal','creditsModal'].forEach(id=>{ const el=$(id); if(el && !el.classList.contains('hidden')){ el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); } }); }});
 }
 
-/* ---------- End-of-run summary & achievements ---------- */
-function onRunEnd(){
-  // compute fragments reward
-  const floors = state.player?.floor || 1;
-  const fragmentsEarned = Math.max(1, Math.floor(floors / 2));
-  state.soulFragments = (state.soulFragments || 0) + fragmentsEarned;
-  // record to leaderboard
-  const entry = { floor: floors, gold: state.player?.gold || 0, class: state.classKey || 'Unknown', seed: state.seed || '' };
-  const lb = JSON.parse(localStorage.getItem(LEADER_KEY) || '[]'); lb.push(entry); localStorage.setItem(LEADER_KEY, JSON.stringify(lb));
-  // achievements (simple examples)
-  state.achievements = state.achievements || {};
-  if(floors >= 10) state.achievements['Deep Delver'] = true;
-  if((state.relics||[]).length >= 3) state.achievements['Relic Hunter'] = true;
-  localStorage.setItem('dim_achievements', JSON.stringify(state.achievements||{}));
-  // show summary modal
-  const sumEl = $('summaryContent'); if(sumEl){
-    let html = `<div class="small">Seed: <code>${state.seed}</code></div>`;
-    html += `<div style="margin-top:8px">Floors cleared: <strong>${floors}</strong></div>`;
-    html += `<div>Fragments earned: <strong>${fragmentsEarned}</strong> (Total: ${state.soulFragments})</div>`;
-    html += `<div style="margin-top:8px">Relics found: ${(state.relics||[]).map(r=>r.name||r.id).join(', ') || '—'}</div>`;
-    html += `<div style="margin-top:8px">Journal entries: ${(state.journal||[]).length}</div>`;
-    html += `<div style="margin-top:12px"><strong>Achievements</strong><div class="small">${Object.keys(state.achievements||{}).filter(k=>state.achievements[k]).join(', ') || '—'}</div></div>`;
-    sumEl.innerHTML = html;
-    $('summaryModal').classList.remove('hidden'); $('summaryModal').setAttribute('aria-hidden','false');
-  }
-  // reset run-specific state
-  state.player = null; state.floorMap = {}; state.currentEnemy = null; state.inCombat = false; fullSave(); renderAll();
-}
-
-/* ---------- Meta shop UI helpers (closeMeta/buyMeta implemented earlier) ---------- */
-
-/* ---------- Boot: gameInit ---------- */
+/* ---------- Boot ---------- */
 function gameInit(seedString){
   state.seed = seedString || String(Date.now());
   initSeed(state.seed);
-  // try to load existing save
   if(fullLoad()){
     if(state.seed !== window.CURRENT_SEED) initSeed(state.seed);
     log('Save loaded on boot.');
@@ -676,8 +631,6 @@ function gameInit(seedString){
   wireUI(); renderAll();
 }
 
-/* expose gameInit to index.html */
+/* expose and auto-start if seed provided in global */
 window.gameInit = gameInit;
-
-/* If index.html provided an initial seed before load */
 if(window.INIT_SEED) gameInit(window.INIT_SEED);
