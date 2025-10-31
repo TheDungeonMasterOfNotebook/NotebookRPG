@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Dungeons in the Margins — Roguelike Expanded</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="wrap">
+    <header class="topbar">
+      <div>
+        <h1>Dungeons in the Margins</h1>
+        <div class="subtitle">Dark-Fantasy Roguelike — Classes • Relics • Procedural Floors</div>
+      </div>
+      <div class="top-actions">
+        <button id="btnNew" class="secondary">New Run</button>
+        <button id="btnNGPlus" class="secondary">New Game+</button>
+        <button id="btnReset" class="warn">Reset Save</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel left">
+        <section class="panel-block">
+          <div class="section-title">Player</div>
+          <div id="playerCard" class="player-card">
+            <div id="playerName" class="player-name">—</div>
+            <div id="playerClass" class="small muted">Choose class to start</div>
+            <div class="equip-list">
+              <div>Weapon: <span id="slotWeapon">None</span></div>
+              <div>Armor: <span id="slotArmor">None</span></div>
+              <div>Accessory: <span id="slotAccessory">None</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-title">Stats</div>
+          <div class="stats-grid">
+            <div class="stat">HP <span id="hp">0</span>/<span id="maxhp">0</span></div>
+            <div class="stat">MP <span id="mp">0</span>/<span id="maxmp">0</span></div>
+            <div class="stat">ATK <span id="atk">0</span></div>
+            <div class="stat">DEF <span id="def">0</span></div>
+            <div class="stat">MAG <span id="mag">0</span></div>
+            <div class="stat">Floor <span id="floor">0</span></div>
+            <div class="stat">Gold <span id="gold">0</span></div>
+            <div class="stat">XP <span id="xp">0</span></div>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-title">Quick</div>
+          <div class="controls">
+            <button id="btnExplore">Explore</button>
+            <button id="btnShop">Shop</button>
+            <button id="btnRest" class="secondary">Rest</button>
+            <button id="btnInventory" class="secondary">Inventory</button>
+            <button id="btnCodex" class="secondary">Codex</button>
+            <button id="btnLeaderboard" class="secondary">Leaderboard</button>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="small muted">Inventory summary</div>
+          <div class="small" id="invSummary">Potions: 0 • Ethers: 0 • Items: 0</div>
+          <div style="margin-top:8px"><button id="btnExport" class="secondary">Export Log</button></div>
+        </section>
+      </aside>
+
+      <section class="panel right">
+        <div class="panel-block">
+          <div class="section-title">Encounter</div>
+          <div id="encounterBox" class="encounter">
+            <div id="encounterTitle" class="encounter-title">Welcome</div>
+            <div id="encounterText" class="muted">Start a run or choose a class.</div>
+
+            <div id="combatUI" class="combat-ui hidden">
+              <div class="enemy-panel">
+                <div id="enemyName" class="enemy-name">—</div>
+                <div class="small muted">HP: <span id="enemyHP">0</span> • ATK: <span id="enemyATK">0</span></div>
+                <div class="small muted">Status: <span id="enemyStatus">—</span></div>
+              </div>
+
+              <div class="combat-actions">
+                <button id="btnAttack">Attack</button>
+                <button id="btnSpell" class="secondary">Spell</button>
+                <button id="btnItem" class="secondary">Item</button>
+                <button id="btnRun" class="warn">Run</button>
+              </div>
+
+              <div id="spellMenu" class="spell-menu hidden">
+                <div class="small muted">Spells (MP)</div>
+                <div class="spell-row" id="spellRow"></div>
+                <div style="margin-top:8px"><button id="btnSpellBack" class="secondary">Back</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-block">
+          <div class="section-title">Shop / Events</div>
+          <div id="shopPanel" class="shop-panel muted">Merchants and events will appear while exploring.</div>
+        </div>
+
+        <div class="panel-block">
+          <div class="section-title">Log</div>
+          <div id="log" class="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="saveToast" class="save-toast">💾 Saved</div>
+
+  <script src="game.js"></script>
+</body>
+</html>
