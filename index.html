@@ -2,20 +2,35 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Dungeons in the Margins — Runic Neon</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Dungeons in the Margins — Dark Gothic (Seeded)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app" class="wrap">
+  <!-- Seed overlay (mystical intro) -->
+  <div id="seedOverlay" class="seed-overlay" role="dialog" aria-modal="true">
+    <div class="seed-card">
+      <h2>🜂 The Fates Await</h2>
+      <p class="muted">Speak the number that will shape your descent — share it with others to replay the same dungeon.</p>
+      <input id="seedInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter a seed (digits) or leave blank" />
+      <div class="seed-controls">
+        <button id="btnStartSeed" class="accent">Begin Fate</button>
+        <button id="btnRandomSeed" class="secondary">Random Seed</button>
+      </div>
+      <div class="small muted" style="margin-top:8px">Seed will appear in the UI so you can copy/share it.</div>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="wrap" aria-hidden="true">
     <header class="topbar">
       <div>
         <h1>🜂 Dungeons in the Margins</h1>
-        <div class="subtitle">Runic Neon Fantasy — Roguelike Notebook RPG</div>
+        <div class="subtitle">Dark Gothic — Seeded Roguelike Notebook</div>
       </div>
       <div class="top-actions">
+        <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
         <button id="btnNew" class="secondary">New Run</button>
-        <button id="btnNGPlus" class="secondary">New Game+</button>
         <button id="btnReset" class="warn">Reset Save</button>
       </div>
     </header>
@@ -32,6 +47,7 @@
               <div>Armor: <span id="slotArmor">None</span></div>
               <div>Accessory: <span id="slotAccessory">None</span></div>
             </div>
+            <div class="relic-row small muted" id="relicRow">Relics: —</div>
           </div>
         </section>
 
@@ -111,8 +127,43 @@
     </main>
   </div>
 
+  <!-- Save toast -->
   <div id="saveToast" class="save-toast">💾 Saved</div>
 
+  <!-- Cinematic overlay -->
+  <div id="cineOverlay" class="cine-overlay hidden" aria-hidden="true">
+    <div id="cineText" class="cine-text"></div>
+    <div id="cineBlood" class="blood-runic"></div>
+  </div>
+
   <script src="game.js"></script>
+
+  <script>
+    // seed overlay wiring
+    (function(){
+      const overlay = document.getElementById('seedOverlay');
+      const app = document.getElementById('app');
+      const seedInput = document.getElementById('seedInput');
+      const seedDisplay = document.getElementById('seedDisplay');
+      document.getElementById('btnStartSeed').onclick = ()=> {
+        let s = seedInput.value.trim();
+        if(s === '') { alert('Please enter numbers or press Random Seed'); return; }
+        startWithSeed(s);
+        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+      };
+      document.getElementById('btnRandomSeed').onclick = ()=> {
+        const s = String(Math.floor(Math.random()*900000 + 100000));
+        seedInput.value = s;
+        startWithSeed(s);
+        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+      };
+      function startWithSeed(s){
+        window.INIT_SEED = s;
+        seedDisplay.innerText = s;
+        if(window.gameInit) window.gameInit(s);
+      }
+      if(window.INIT_SEED){ overlay.style.display = 'none'; app.setAttribute('aria-hidden','false'); }
+    })();
+  </script>
 </body>
 </html>
