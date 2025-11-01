@@ -1,18 +1,19 @@
-/* Dark Gothic — Legacy of Ash (Beta Phase 4) */
+/* Phase 5: Epic Text RPG — UI polish, sprites integration */
 :root{
   --bg1:#040105; --bg2:#12060a;
-  --runic:#8a0033;
-  --muted:#9aa3b8;
-  --panel-glass:rgba(255,255,255,0.03);
-  --fragments:#ffd580;
-  --accent:#6e1f3a;
+  --runic:#8a0033; --muted:#9aa3b8; --panel-glass:rgba(255,255,255,0.03);
+  --accent:#6e1f3a; --rare:#2979ff; --epic:#a020f0; --legend:#ffcc00; --uncommon:#3fa34d;
+  --sprite-size:16px; --sprite-scale:2; /* shows as 32px */
 }
+
+/* basic layout */
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#efeef2}
 .wrap{max-width:1100px;margin:10px auto;padding:12px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 h1{margin:0;font-weight:900;color:var(--runic);text-shadow:0 0 12px rgba(138,0,51,0.28)}
 .subtitle{color:var(--muted);font-size:13px}
+.season-badge{font-size:12px;margin-top:4px}
 .layout{display:flex;gap:12px}
 .panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.02);box-shadow:0 12px 40px rgba(0,0,0,0.65)}
 .left{width:330px;min-width:260px}
@@ -30,7 +31,7 @@ button.secondary{background:#1a2330}
 button.warn{background:#7a1f2f}
 button.accent{background:linear-gradient(90deg,#ff6b6b,#8a0033); color:#fff}
 button:active{transform:translateY(1px)}
-.log{height:240px;overflow:auto;background:linear-gradient(180deg,#041017,#031217);padding:10px;border-radius:8px;font-family:monospace;font-size:13px;border:1px solid rgba(255,255,255,0.02)}
+.log{height:220px;overflow:auto;background:linear-gradient(180deg,#041017,#031217);padding:10px;border-radius:8px;font-family:monospace;font-size:13px;border:1px solid rgba(255,255,255,0.02)}
 .encounter{padding:10px;border-radius:8px}
 .enemy-name{font-weight:900;color:#ffd7e0;text-shadow:0 0 8px rgba(255,200,210,0.06)}
 .combat-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -44,6 +45,36 @@ button:active{transform:translateY(1px)}
 .save-toast.show{opacity:1;transform:translateY(0);box-shadow:0 10px 30px rgba(138,0,51,0.08)}
 .relic-row{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .relic-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(138,0,51,0.06);font-weight:700;color:#ffdfe6;box-shadow:0 4px 18px rgba(138,0,51,0.06)}
+
+/* item icon (16x16) - scaled */
+.item-icon{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));border-radius:4px;display:inline-block;vertical-align:middle;margin-right:8px;background:#051018;image-rendering:pixelated;overflow:hidden}
+.item-icon img{width:100%;height:100%;display:block;border-radius:4px}
+.item-icon[data-rarity="Common"]{box-shadow:0 0 6px rgba(160,160,160,0.06)}
+.item-icon[data-rarity="Uncommon"]{box-shadow:0 0 8px rgba(63,163,77,0.18)}
+.item-icon[data-rarity="Rare"]{box-shadow:0 0 8px rgba(41,121,255,0.18)}
+.item-icon[data-rarity="Epic"]{box-shadow:0 0 10px rgba(162,32,240,0.18)}
+.item-icon[data-rarity="Legendary"]{box-shadow:0 0 12px rgba(255,204,0,0.22)}
+
+/* monster sprite (16x16 scaled) */
+.monster-sprite{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));image-rendering:pixelated;background-image:url('assets/monsters.png');background-repeat:no-repeat;background-size: calc(16 * var(--sprite-scale) * var(--monster-sheet-cols)) calc(16 * var(--sprite-scale) * var(--monster-sheet-rows));display:inline-block;margin-right:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03)}
+/* CSS vars used by script if sheet dims differ */
+:root{ --monster-sheet-cols:4; --monster-sheet-rows:4; }
+
+/* battle area */
+.battle-area{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+
+/* name color by rarity */
+.enemy.Common{color:#bdbdbd}
+.enemy.Uncommon{color:var(--uncommon)}
+.enemy.Rare{color:var(--rare)}
+.enemy.Epic{color:var(--epic)}
+.enemy.Legendary{color:var(--legend)}
+
+/* tooltip */
+.item-cell{display:flex;align-items:center}
+.tooltip{position:absolute;background:#09070a;color:#fff;padding:6px 8px;border-radius:6px;font-size:12px;left:28px;top:-6px;display:none;z-index:40;border:1px solid rgba(255,255,255,0.03)}
+.item-cell:hover .tooltip{display:block}
+
 /* cinematic overlay */
 .cine-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none}
 .cine-overlay.hidden{display:none}
@@ -66,12 +97,8 @@ button:active{transform:translateY(1px)}
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:450;background:rgba(2,2,5,0.6)}
 .modal.hidden{display:none}
 .modal-card{background:linear-gradient(180deg,#081018,#0b0a12);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:520px}
-.modal-body{max-height:45vh;overflow:auto;padding:6px;margin-top:8px}
+.modal-body{max-height:55vh;overflow:auto;padding:6px;margin-top:8px}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
-
-/* credits specific */
-.modal-card h3{margin:0 0 6px 0;color:var(--runic)}
-.modal-card p{margin:6px 0}
 
 /* responsive */
 @media (max-width:920px){ .layout{flex-direction:column} .left{width:auto} .combat-actions button{flex-basis:100%} }
