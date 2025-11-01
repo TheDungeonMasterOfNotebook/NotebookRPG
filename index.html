@@ -2,37 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>Dungeons in the Margins — Legacy of Ash (Beta Phase 4)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>epictextrpg — Legacy of Ash (Season 1 / Beta Phase 5)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Seed overlay (mystical intro) -->
+  <!-- Seed overlay -->
   <div id="seedOverlay" class="seed-overlay" role="dialog" aria-modal="true">
     <div class="seed-card">
       <h2>🜂 The Fates Await</h2>
-      <p class="muted">Speak the number that will shape your descent — share it with others to replay the same dungeon.</p>
+      <p class="muted">Enter a seed (digits), choose Random, or run Today's Challenge.</p>
       <input id="seedInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter a seed (digits) or leave blank" />
       <div class="seed-controls">
         <button id="btnStartSeed" class="accent">Begin Fate</button>
         <button id="btnRandomSeed" class="secondary">Random Seed</button>
+        <button id="btnDailySeed" class="secondary">Today's Challenge</button>
       </div>
-      <div class="small muted" style="margin-top:8px">Seed will appear in the top-right so you can copy/share it.</div>
+      <div class="small muted" style="margin-top:8px">Seed shows top-right — copy/share to replay exact dungeon.</div>
     </div>
   </div>
 
-  <!-- App -->
   <div id="app" class="wrap" aria-hidden="true">
     <header class="topbar">
       <div>
-        <h1>🜂 Dungeons in the Margins</h1>
-        <div class="subtitle">Legacy of Ash (Beta Phase 4)</div>
+        <h1>epictextrpg</h1>
+        <div class="subtitle">Legacy of Ash — Season 1 (Beta Phase 5)</div>
+        <div id="seasonBadge" class="season-badge muted">Season 1 • Daily Runs</div>
       </div>
       <div class="top-actions">
         <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
         <div class="small muted">Fragments: <span id="fragments">0</span></div>
         <button id="btnMeta" class="secondary">Meta Shop</button>
         <button id="btnNew" class="secondary">New Run</button>
+        <button id="btnDaily" class="secondary">Daily Run</button>
         <button id="btnCredits" class="secondary">Credits</button>
         <button id="btnReset" class="warn">Reset Save</button>
       </div>
@@ -92,7 +94,12 @@
         <div class="panel-block">
           <div class="section-title">Encounter</div>
           <div id="encounterBox" class="encounter">
-            <div id="encounterTitle" class="encounter-title">Welcome</div>
+            <div id="encounterTop" class="encounter-top">
+              <div id="battleArea" class="battle-area">
+                <!-- monster sprite + name updated dynamically -->
+              </div>
+              <div id="encounterTitle" class="encounter-title">Welcome</div>
+            </div>
             <div id="encounterText" class="muted">Start a run or choose a class.</div>
 
             <div id="combatUI" class="combat-ui hidden">
@@ -170,6 +177,17 @@
     </div>
   </div>
 
+  <div id="dailyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Daily Challenge</h3>
+      <div id="dailyContent" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="btnStartDaily" class="accent">Start Daily Run</button>
+        <button onclick="closeDaily()" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Credits Modal -->
   <div id="creditsModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
@@ -179,8 +197,7 @@
         <p><strong>Design & Story:</strong> Jeremy Frith</p>
         <p><strong>Development Assistance:</strong> GPT-5 Thinking mini</p>
         <p><strong>Theme:</strong> Dark Gothic — Legacy of Ash</p>
-        <p><strong>Special Thanks:</strong> Notebook RPG Community</p>
-        <p class="small muted">Beta Phase 4 — Thank you for testing. Report bugs via export log.</p>
+        <p class="small muted">Phase 5 — Season 1 • Pixel art placeholders integrated.</p>
       </div>
       <div class="modal-actions">
         <button id="closeCredits" class="secondary">Close</button>
@@ -191,7 +208,7 @@
   <script src="game.js"></script>
 
   <script>
-    // seed overlay wiring
+    // seed overlay wiring + daily seed quick button
     (function(){
       const overlay = document.getElementById('seedOverlay');
       const app = document.getElementById('app');
@@ -208,9 +225,15 @@
         startWithSeed(s);
         overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
       };
+      document.getElementById('btnDailySeed').onclick = ()=> {
+        const s = window.generateDailySeed();
+        seedInput.value = s;
+        startWithSeed(s);
+        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+      };
       function startWithSeed(s){
         window.INIT_SEED = s;
-        if($('seedDisplay')) $('seedDisplay').innerText = s;
+        if(document.getElementById('seedDisplay')) document.getElementById('seedDisplay').innerText = s;
         if(window.gameInit) window.gameInit(s);
       }
       if(window.INIT_SEED){ overlay.style.display = 'none'; app.setAttribute('aria-hidden','false'); }
