@@ -3,18 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>epictextrpg — Legacy of Ash (Season 1 / Beta Phase 5)</title>
+  <title>epictextrpg — The Dark Descent (Season 1 • Phase 7)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Seed overlay -->
+  <!-- Seed overlay / Intro -->
   <div id="seedOverlay" class="seed-overlay" role="dialog" aria-modal="true">
     <div class="seed-card">
       <h2>🜂 The Fates Await</h2>
-      <p class="muted">Enter a seed (digits), choose Random, or run Today's Challenge.</p>
-      <input id="seedInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Enter a seed (digits) or leave blank" />
+      <p class="muted">Enter a seed (digits) or choose Random / Daily. Pick a class to begin.</p>
+      <input id="seedInput" type="text" inputmode="numeric" placeholder="Enter a seed (digits) or leave blank" />
+      <div style="margin-top:8px;">
+        <select id="classSelect" aria-label="Choose class">
+          <option value="Warrior">Warrior</option>
+          <option value="Mage">Mage</option>
+          <option value="Rogue">Rogue</option>
+        </select>
+      </div>
       <div class="seed-controls">
-        <button id="btnStartSeed" class="accent">Begin Fate</button>
+        <button id="btnStartSeed" class="accent">Begin Run</button>
         <button id="btnRandomSeed" class="secondary">Random Seed</button>
         <button id="btnDailySeed" class="secondary">Today's Challenge</button>
       </div>
@@ -25,8 +32,8 @@
   <div id="app" class="wrap" aria-hidden="true">
     <header class="topbar">
       <div>
-        <h1>epictextrpg</h1>
-        <div class="subtitle">Legacy of Ash — Season 1 (Beta Phase 5)</div>
+        <h1 id="gameTitle">epictextrpg</h1>
+        <div class="subtitle">The Dark Descent — Season 1 (Phase 7)</div>
         <div id="seasonBadge" class="season-badge muted">Season 1 • Daily Runs</div>
       </div>
       <div class="top-actions">
@@ -46,7 +53,7 @@
           <div class="section-title">Player</div>
           <div id="playerCard" class="player-card">
             <div id="playerName" class="player-name">—</div>
-            <div id="playerClass" class="small muted">Choose a class to start</div>
+            <div id="playerClass" class="small muted">Choose a class</div>
             <div class="equip-list muted">
               <div>Weapon: <span id="slotWeapon">None</span></div>
               <div>Armor: <span id="slotArmor">None</span></div>
@@ -79,7 +86,7 @@
             <button id="btnRest" class="secondary">Rest (5g)</button>
             <button id="btnInventory" class="secondary">Inventory</button>
             <button id="btnJournal" class="secondary">Journal</button>
-            <button id="btnLeaderboard" class="secondary">Leaderboard</button>
+            <button id="btnAchievements" class="secondary">Achievements</button>
           </div>
         </section>
 
@@ -95,9 +102,7 @@
           <div class="section-title">Encounter</div>
           <div id="encounterBox" class="encounter">
             <div id="encounterTop" class="encounter-top">
-              <div id="battleArea" class="battle-area">
-                <!-- monster sprite + name updated dynamically -->
-              </div>
+              <div id="battleArea" class="battle-area"></div>
               <div id="encounterTitle" class="encounter-title">Welcome</div>
             </div>
             <div id="encounterText" class="muted">Start a run or choose a class.</div>
@@ -107,27 +112,27 @@
                 <div id="enemyName" class="enemy-name">—</div>
                 <div class="small muted">HP: <span id="enemyHP">0</span> • ATK: <span id="enemyATK">0</span></div>
                 <div class="small muted">Status: <span id="enemyStatus">—</span></div>
+                <div id="enemyBuffs" class="small muted"></div>
               </div>
 
               <div class="combat-actions">
                 <button id="btnAttack">Attack</button>
+                <button id="btnSkill" class="secondary">Skill</button>
                 <button id="btnSpell" class="secondary">Spell</button>
                 <button id="btnItem" class="secondary">Item</button>
                 <button id="btnRun" class="warn">Run</button>
               </div>
 
-              <div id="spellMenu" class="spell-menu hidden">
-                <div class="small muted">Spells (MP)</div>
-                <div class="spell-row" id="spellRow"></div>
-                <div style="margin-top:8px"><button id="btnSpellBack" class="secondary">Back</button></div>
-              </div>
+              <div id="skillMenu" class="spell-menu hidden"><div class="small muted">Skills</div><div id="skillRow" class="spell-row"></div><div style="margin-top:8px"><button id="btnSkillBack" class="secondary">Back</button></div></div>
+
+              <div id="spellMenu" class="spell-menu hidden"><div class="small muted">Spells (MP)</div><div class="spell-row" id="spellRow"></div><div style="margin-top:8px"><button id="btnSpellBack" class="secondary">Back</button></div></div>
             </div>
           </div>
         </div>
 
         <div class="panel-block">
-          <div class="section-title">Shop / Events</div>
-          <div id="shopPanel" class="shop-panel muted">Merchants and events will appear while exploring.</div>
+          <div class="section-title">Shop / Events / Town</div>
+          <div id="shopPanel" class="shop-panel muted">Merchants and events appear while exploring.</div>
         </div>
 
         <div class="panel-block">
@@ -148,47 +153,38 @@
   </div>
 
   <!-- Modals -->
+  <div id="townModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>The Hollow Village</h3>
+      <div id="townContent" class="modal-body"></div>
+      <div class="modal-actions"><button id="btnLeaveTown" class="secondary">Leave</button></div>
+    </div>
+  </div>
+
   <div id="metaModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
       <h3>Meta Shop — Spend Soul Fragments</h3>
       <div id="metaContent" class="modal-body"></div>
-      <div class="modal-actions">
-        <button onclick="closeMeta()" class="secondary">Close</button>
-      </div>
+      <div class="modal-actions"><button onclick="closeMeta()" class="secondary">Close</button></div>
     </div>
   </div>
 
   <div id="journalModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
-      <h3>Journal</h3>
+      <h3>Journal & Bestiary</h3>
       <div id="journalContent" class="modal-body"></div>
       <div class="modal-actions"><button onclick="closeJournal()" class="secondary">Close</button></div>
     </div>
   </div>
 
-  <div id="summaryModal" class="modal hidden" aria-hidden="true">
+  <div id="achievementsModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
-      <h3>Run Summary</h3>
-      <div id="summaryContent" class="modal-body"></div>
-      <div class="modal-actions">
-        <button id="btnCopySeed" class="secondary">Copy Seed Link</button>
-        <button onclick="closeSummary()" class="secondary">Close</button>
-      </div>
+      <h3>Achievements</h3>
+      <div id="achContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeAchievements()" class="secondary">Close</button></div>
     </div>
   </div>
 
-  <div id="dailyModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-card">
-      <h3>Daily Challenge</h3>
-      <div id="dailyContent" class="modal-body"></div>
-      <div class="modal-actions">
-        <button id="btnStartDaily" class="accent">Start Daily Run</button>
-        <button onclick="closeDaily()" class="secondary">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Credits Modal -->
   <div id="creditsModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
       <h3>Credits</h3>
@@ -196,45 +192,41 @@
         <p><strong>Created by:</strong> Jeremy Frith</p>
         <p><strong>Design & Story:</strong> Jeremy Frith</p>
         <p><strong>Development Assistance:</strong> GPT-5 Thinking mini</p>
-        <p><strong>Theme:</strong> Dark Gothic — Legacy of Ash</p>
-        <p class="small muted">Phase 5 — Season 1 • Pixel art placeholders integrated.</p>
+        <p class="small muted">Phase 7 — Exploration & Lore + Core Systems</p>
       </div>
-      <div class="modal-actions">
-        <button id="closeCredits" class="secondary">Close</button>
-      </div>
+      <div class="modal-actions"><button id="closeCredits" class="secondary">Close</button></div>
     </div>
   </div>
 
   <script src="game.js"></script>
-
   <script>
-    // seed overlay wiring + daily seed quick button
     (function(){
       const overlay = document.getElementById('seedOverlay');
       const app = document.getElementById('app');
       const seedInput = document.getElementById('seedInput');
+      const clsSelect = document.getElementById('classSelect');
       document.getElementById('btnStartSeed').onclick = ()=> {
-        let s = seedInput.value.trim();
-        if(s === '') { alert('Please enter numbers or press Random Seed'); return; }
-        startWithSeed(s);
-        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+        const s = seedInput.value.trim() || String(Math.floor(Math.random()*900000 + 100000));
+        const cls = clsSelect.value || 'Warrior';
+        startWithSeed(s, cls);
       };
       document.getElementById('btnRandomSeed').onclick = ()=> {
         const s = String(Math.floor(Math.random()*900000 + 100000));
         seedInput.value = s;
-        startWithSeed(s);
-        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+        startWithSeed(s, clsSelect.value || 'Warrior');
       };
       document.getElementById('btnDailySeed').onclick = ()=> {
         const s = window.generateDailySeed();
         seedInput.value = s;
-        startWithSeed(s);
-        overlay.style.display = 'none'; app.setAttribute('aria-hidden','false');
+        startWithSeed(s, clsSelect.value || 'Warrior');
       };
-      function startWithSeed(s){
+      function startWithSeed(s, cls){
         window.INIT_SEED = s;
         if(document.getElementById('seedDisplay')) document.getElementById('seedDisplay').innerText = s;
-        if(window.gameInit) window.gameInit(s);
+        overlay.classList.add('hidden');
+        setTimeout(()=> overlay.style.display='none', 450);
+        app.setAttribute('aria-hidden','false');
+        if(window.gameInit) window.gameInit(s, cls);
       }
       if(window.INIT_SEED){ overlay.style.display = 'none'; app.setAttribute('aria-hidden','false'); }
     })();
