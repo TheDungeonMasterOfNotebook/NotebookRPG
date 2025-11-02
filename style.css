@@ -1,234 +1,255 @@
-/* ──────────────────────────────────────────────
-   NOTEBOOK RPG - GLOBAL STYLE SHEET
-   ────────────────────────────────────────────── */
+/*───────────────────────────────────────────────
+ 📘 NOTEBOOK RPG BASE STYLES
+───────────────────────────────────────────────*/
 
-:root {
-  --ink: #2d1b00;
-  --paper: #f7f1e3;
-  --paper-dark: #dcd0b9;
-  --highlight: #5b3c11;
-  --rare: #4c8bff;
-  --epic: #b664e3;
-  --legendary: #e8b62a;
-  --shadow: rgba(0, 0, 0, 0.2);
-  --transition: 0.3s ease;
-  --radius: 10px;
-}
-
-/* RESET & BASE */
 * {
-  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
 }
 
 body {
   font-family: "Courier New", monospace;
-  background: linear-gradient(180deg, var(--paper), var(--paper-dark));
-  color: var(--ink);
+  background: #0e0e0e;
+  color: #fff;
   overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
 }
 
-/* ──────────────────────────────────────────────
-   PAGE STRUCTURE
-   ────────────────────────────────────────────── */
+h1 {
+  font-size: 2em;
+  text-align: center;
+  margin-bottom: 20px;
+  color: #ffd700;
+}
 
 #gameContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  width: 100%;
-  height: 100vh;
   position: relative;
-}
-
-canvas {
-  display: block;
-  background: radial-gradient(circle, #fffdf7 0%, #f0e6ce 100%);
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
-  border: 3px solid var(--ink);
-  border-radius: var(--radius);
-}
-
-/* ──────────────────────────────────────────────
-   USER INTERFACE
-   ────────────────────────────────────────────── */
-
-#gameUI {
+  z-index: 2;
   width: 90%;
-  max-width: 900px;
-  margin-top: 10px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 2px solid var(--ink);
-  border-radius: var(--radius);
-  box-shadow: 0 0 10px var(--shadow);
-  padding: 15px;
+  max-width: 800px;
+  margin: 60px auto;
+  background: rgba(25, 25, 25, 0.85);
+  border: 2px solid #444;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
 }
 
-/* ─────────────── BUTTONS ─────────────── */
-button, .btn {
-  font-family: inherit;
-  background: var(--ink);
-  color: var(--paper);
-  border: none;
-  border-radius: 6px;
-  padding: 8px 18px;
-  margin: 4px;
-  cursor: pointer;
-  transition: var(--transition);
+/*───────────────────────────────────────────────
+ 🌍 BIOME BACKGROUNDS & PARTICLES
+───────────────────────────────────────────────*/
+
+#biomeBackground {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  transition: background-image 2s ease-in-out, filter 3s ease-in-out;
 }
 
-button:hover, .btn:hover {
-  background: var(--highlight);
-  transform: scale(1.05);
-}
-
-/* ─────────────── TEXTBOXES & MENUS ─────────────── */
-.panel {
-  background: rgba(255, 255, 255, 0.85);
-  border: 2px solid var(--ink);
-  border-radius: var(--radius);
-  padding: 15px;
-  margin: 10px 0;
-  box-shadow: 0 0 10px var(--shadow);
-}
-
-h1, h2, h3 {
-  text-align: center;
-  margin-bottom: 10px;
-  text-shadow: 1px 1px 0 #fff;
-}
-
-/* ─────────────── LOOT & ITEMS ─────────────── */
-.item-card {
-  display: inline-block;
-  border: 2px solid var(--ink);
-  border-radius: 8px;
-  padding: 8px;
-  margin: 5px;
-  min-width: 100px;
-  text-align: center;
-  background: #fffef8;
-  transition: var(--transition);
-}
-
-.item-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 10px var(--shadow);
-}
-
-.item-common { border-color: #888; }
-.item-uncommon { border-color: #4caf50; }
-.item-rare { border-color: var(--rare); }
-.item-superrare { border-color: #4c5cff; }
-.item-epic { border-color: var(--epic); }
-.item-mostdefepic { border-color: #8a2be2; }
-.item-powerful { border-color: #ff6f00; }
-.item-legendary { border-color: var(--legendary); }
-.item-mythic { border-color: #ff2f92; }
-
-/* ─────────────── ENCHANTMENT EFFECT ─────────────── */
-.enchanted {
-  animation: shimmer 1.5s infinite linear;
-}
-
-@keyframes shimmer {
-  0% { box-shadow: 0 0 4px var(--highlight); }
-  50% { box-shadow: 0 0 15px var(--highlight); }
-  100% { box-shadow: 0 0 4px var(--highlight); }
-}
-
-/* ─────────────── FLOATING XP & ACE POPUPS ─────────────── */
-.float-popup {
-  position: absolute;
-  font-weight: bold;
+#particleLayer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
   pointer-events: none;
-  animation: floatUp 1.5s ease-out forwards;
-  opacity: 0.9;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  animation: floatParticle linear infinite;
+}
+
+@keyframes floatParticle {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh);
+    opacity: 0;
+  }
+}
+
+/*───────────────────────────────────────────────
+ 💬 FLOATING TEXTS (XP, CURRENCY, ETC)
+───────────────────────────────────────────────*/
+
+#floatLayer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.floatText {
+  position: absolute;
+  font-size: 1.2em;
+  font-weight: bold;
+  animation: floatUp 1.3s ease-out forwards;
 }
 
 @keyframes floatUp {
-  from { transform: translateY(0); opacity: 1; }
-  to { transform: translateY(-50px); opacity: 0; }
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
 }
 
-/* ─────────────── MODALS & DAILY REWARDS ─────────────── */
-.modal {
+.floatText.gold {
+  color: #ffd700;
+}
+.floatText.green {
+  color: #00ff99;
+}
+.floatText.red {
+  color: #ff5555;
+}
+
+/*───────────────────────────────────────────────
+ ⚙️ ADMIN PANEL
+───────────────────────────────────────────────*/
+
+#adminPanel {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: var(--radius);
-  box-shadow: 0 0 20px var(--shadow);
-  padding: 25px;
-  width: 90%;
-  max-width: 400px;
-  z-index: 999;
+  top: 0;
+  right: 0;
+  width: 260px;
+  height: 100vh;
+  background: rgba(20, 20, 20, 0.95);
+  color: #fff;
+  padding: 15px;
+  border-left: 2px solid #555;
+  overflow-y: auto;
+  z-index: 9999;
+  transform: translateX(100%);
+  transition: transform 0.4s ease;
+  font-family: monospace;
+}
+
+#adminPanel.visible {
+  transform: translateX(0);
+}
+
+#adminPanel h2 {
+  margin-top: 0;
+  color: #ffd700;
   text-align: center;
-  animation: fadeIn 0.6s ease;
 }
 
-.modal h2 {
-  margin-bottom: 10px;
+#adminPanel label {
+  display: block;
+  margin: 8px 0;
+  font-size: 0.9em;
 }
 
-.modal button {
-  margin-top: 10px;
+#adminPanel input {
+  width: 100%;
+  padding: 5px;
+  border: none;
+  border-radius: 4px;
+  margin-top: 3px;
 }
 
-/* ─────────────── PARTICLES / BACKGROUND LAYERS ─────────────── */
-#bg {
+#adminPanel button {
+  width: 100%;
+  padding: 6px;
+  margin: 5px 0;
+  background: #333;
+  color: white;
+  border: 1px solid #777;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+#adminPanel button:hover {
+  background: #555;
+}
+
+.hidden {
+  display: none;
+}
+
+/*───────────────────────────────────────────────
+ 🧱 MODALS, DIALOGS, AND UI PANELS
+───────────────────────────────────────────────*/
+
+#modalContainer {
   position: fixed;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden;
-  z-index: -1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 200;
 }
 
-.layer {
-  position: absolute;
-  width: 110%;
-  height: 110%;
-  background-repeat: no-repeat;
-  background-size: cover;
-  opacity: 0.5;
-  animation: parallaxMove 30s linear infinite;
+.modal {
+  background: #111;
+  border: 2px solid #555;
+  border-radius: 10px;
+  padding: 20px;
+  width: 300px;
+  text-align: center;
+  color: #fff;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
 }
 
-.layer.back { animation-duration: 60s; }
-.layer.mid { animation-duration: 40s; }
-.layer.front { animation-duration: 25s; }
+/*───────────────────────────────────────────────
+ 🔄 ANIMATIONS & TRANSITIONS
+───────────────────────────────────────────────*/
 
-@keyframes parallaxMove {
-  0% { transform: translateX(0); }
-  50% { transform: translateX(-5%); }
-  100% { transform: translateX(0); }
+.fadeIn {
+  animation: fadeIn 1s ease forwards;
 }
 
-/* ─────────────── FADE IN / OUT ─────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
-/* ─────────────── TYPEWRITER EFFECT ─────────────── */
-.typewriter {
-  overflow: hidden;
-  border-right: .15em solid var(--ink);
-  white-space: nowrap;
-  animation: typing 3.5s steps(40, end), blink-caret .75s step-end infinite;
+.fadeOut {
+  animation: fadeOut 1s ease forwards;
 }
 
-@keyframes typing {
-  from { width: 0 }
-  to { width: 100% }
+@keyframes fadeOut {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
-@keyframes blink-caret {
-  from, to { border-color: transparent }
-  50% { border-color: var(--ink); }
+/*───────────────────────────────────────────────
+ 💬 TOOLTIP (OPTIONAL)
+───────────────────────────────────────────────*/
+
+.tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  pointer-events: none;
+  color: #fff;
+  border: 1px solid #888;
+  animation: fadeIn 0.3s ease;
 }
