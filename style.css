@@ -1,82 +1,114 @@
-:root{
-  --bg1:#040105; --bg2:#12060a; --runic:#8a0033; --muted:#9aa3b8;
-  --accent:#6e1f3a; --rare:#2979ff; --epic:#a020f0; --legend:#ffcc00; --uncommon:#3fa34d;
-  --sprite-size:16px; --sprite-scale:2;
-  --monster-cols:4; --monster-rows:4;
-}
+/* Full build styles (Stage A + B) */
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial;background:#0e1116;color:#e6eef8;overflow:hidden}
+a{color:inherit}
+header{background:linear-gradient(90deg,#0b1220,#10202a);padding:12px;text-align:center}
+h1{margin:0;font-size:18px;color:#e9f2ff}
 
-/* Reset & layout */
-*{box-sizing:border-box} html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#efeef2}
-.wrap{max-width:1100px;margin:10px auto;padding:12px}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-h1{margin:0;font-weight:900;color:var(--runic);text-shadow:0 0 12px rgba(138,0,51,0.28)}
-.subtitle{color:var(--muted);font-size:13px}
-.layout{display:flex;gap:12px}
-.panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.02);box-shadow:0 12px 40px rgba(0,0,0,0.65)}
-.left{width:330px;min-width:260px}
-.right{flex:1}
-.section-title{font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.8px}
-.player-card{background:linear-gradient(90deg,#071017,#0b0a12);padding:10px;border-radius:8px;border:1px solid rgba(138,0,51,0.06)}
-.player-name{font-weight:900;font-size:16px;color:#fff1f5}
-.small{font-size:13px}
-.muted{color:var(--muted)}
-.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.stat{background:rgba(255,255,255,0.01);padding:10px;border-radius:8px;font-weight:800}
-.controls{display:flex;flex-wrap:wrap;gap:8px}
-button{background:linear-gradient(180deg,var(--runic), #5a001f); color:white;border:none;padding:10px 12px;border-radius:10px;font-weight:800;cursor:pointer;box-shadow:0 10px 30px rgba(138,0,51,0.08);transition:transform .08s}
-button.secondary{background:#1a2330}
-button.warn{background:#7a1f2f}
-button.accent{background:linear-gradient(90deg,#ff6b6b,#8a0033); color:#fff}
-button:active{transform:translateY(1px)}
-.log{height:220px;overflow:auto;background:linear-gradient(180deg,#041017,#031217);padding:10px;border-radius:8px;font-family:monospace;font-size:13px;border:1px solid rgba(255,255,255,0.02)}
-.encounter{padding:10px;border-radius:8px}
-.enemy-name{font-weight:900;color:#ffd7e0;text-shadow:0 0 8px rgba(255,200,210,0.06)}
-.combat-actions{display:flex;gap:8px;flex-wrap:wrap}
-.combat-actions button{flex:1 1 30%}
-.spell-menu{margin-top:8px}
-.spell-row{display:flex;gap:8px;flex-wrap:wrap}
-.spell-row button{padding:8px 10px;background:#1e2a2f}
-.shop-panel{padding:8px;border-radius:8px;background:linear-gradient(180deg,#061019,#061117)}
-.item-row{display:flex;justify-content:space-between;align-items:center;padding:6px;border-bottom:1px dashed rgba(255,255,255,0.02)}
-.save-toast{position:fixed;right:18px;bottom:18px;background:linear-gradient(180deg,rgba(138,0,51,0.06),rgba(138,0,51,0.03));padding:8px 10px;border-radius:8px;border:1px solid rgba(138,0,51,0.08);color:var(--muted);font-weight:800;opacity:0;transform:translateY(10px);transition:all .35s}
-.save-toast.show{opacity:1;transform:translateY(0);box-shadow:0 10px 30px rgba(138,0,51,0.08)}
-.relic-row{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
-.relic-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(138,0,51,0.06);font-weight:700;color:#ffdfe6;box-shadow:0 4px 18px rgba(138,0,51,0.06)}
+/* Parallax background */
+#bg{position:fixed;inset:0;z-index:0;overflow:hidden}
+.layer{position:absolute;left:50%;transform:translateX(-50%);width:140%;height:140%;background-repeat:no-repeat;background-position:center center;pointer-events:none;opacity:0.95}
+.layer.back{z-index:0;filter:blur(1px);transform-origin:center top}
+.layer.mid{z-index:1}
+.layer.front{z-index:2;mix-blend-mode:overlay;opacity:0.9}
 
-.item-icon{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));border-radius:4px;display:inline-block;vertical-align:middle;margin-right:8px;background:#051018;image-rendering:pixelated;overflow:hidden}
-.item-icon img{width:100%;height:100%;display:block;border-radius:4px}
-.item-icon[data-rarity="Common"]{box-shadow:0 0 6px rgba(160,160,160,0.06)}
-.item-icon[data-rarity="Uncommon"]{box-shadow:0 0 8px rgba(63,163,77,0.18)}
-.item-icon[data-rarity="Rare"]{box-shadow:0 0 8px rgba(41,121,255,0.18)}
-.item-icon[data-rarity="Epic"]{box-shadow:0 0 10px rgba(162,32,240,0.18)}
-.item-icon[data-rarity="Legendary"]{box-shadow:0 0 12px rgba(255,204,0,0.22)}
+/* Game container */
+#game{position:relative;z-index:4;max-width:1120px;margin:20px auto;padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.6);overflow:auto}
+main#main-wrap{display:flex;flex-direction:column;gap:12px}
 
-.monster-sprite{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));image-rendering:pixelated;background-image:url('assets/monsters.png');background-repeat:no-repeat;background-size: calc(16 * var(--sprite-scale) * var(--monster-cols)) calc(16 * var(--sprite-scale) * var(--monster-rows));display:inline-block;margin-right:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03)}
-.battle-area{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+/* Layout */
+#top-row{display:flex;gap:12px;align-items:flex-start}
+#player-panel{flex:1;display:flex;gap:12px}
+#player-info{flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.008));border-radius:8px;padding:12px;border:1px solid rgba(255,255,255,0.03)}
+.player-top{display:flex;gap:12px;align-items:center}
+.hp-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.hp-bar{flex:1;background:rgba(255,255,255,0.02);border-radius:10px;height:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.03)}
+.hp-fill{height:100%;background:linear-gradient(90deg,#ffd7a6,#ff7d4b);transition:width .5s ease}
+.hp-row #player-hp-small{width:120px;font-size:13px;color:#bcd}
 
-.enemy.Common{color:#bdbdbd}
-.enemy.Uncommon{color:var(--uncommon)}
-.enemy.Rare{color:var(--rare)}
-.enemy.Epic{color:var(--epic)}
-.enemy.Legendary{color:var(--legend)}
+/* XP */
+.xp-row{display:flex;align-items:center;gap:12px;margin-top:8px}
+.xp-bar{height:12px;background:rgba(255,255,255,0.02);border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.03)}
+.xp-fill{height:100%;background:linear-gradient(90deg,#8cc4ff,#4f7ef6);transition:width .6s ease}
+.levelup-badge{padding:6px 10px;border-radius:20px;background:linear-gradient(90deg,#f59e0b,#f97316);color:white;font-weight:700;opacity:0;transform:scale(0.9)}
+.stats-row{display:flex;gap:12px;margin-top:8px;font-size:14px;color:#cfe4ff}
 
-.tooltip{position:absolute;background:#09070a;color:#fff;padding:6px 8px;border-radius:6px;font-size:12px;left:28px;top:-6px;display:none;z-index:40;border:1px solid rgba(255,255,255,0.03)}
-.item-cell:hover .tooltip{display:block}
+/* aces */
+.aces-row{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:#fff}
+.ace-pill{padding:6px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);font-weight:700;background:rgba(0,0,0,0.12)}
+.ace-pill.clubs{background:linear-gradient(180deg,#203a1f,#13311a)}
+.ace-pill.diamonds{background:linear-gradient(180deg,#17384a,#0f2740)}
+.ace-pill.hearts{background:linear-gradient(180deg,#5a1b1b,#3b0f0f)}
+.ace-pill.spades{background:linear-gradient(180deg,#201b2b,#0f0b15)}
+.ace-total{width:100%;margin-top:6px;color:#dfefff;font-weight:600}
 
-.cine-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none}
-.cine-overlay.hidden{display:none}
-.cine-text{font-size:20px;color:#ffdfe6;padding:20px;border-radius:8px;text-align:center;opacity:0;transform:scale(0.98);animation: cineIn .9s ease forwards}
-@keyframes cineIn{0%{opacity:0;transform:scale(0.98);filter:blur(4px)}30%{opacity:1;transform:scale(1.02);filter:blur(0)}100%{opacity:1;transform:scale(1);filter:blur(0)}}
+/* companions & status */
+.companion-row{margin-top:8px}
+.status-row{margin-top:8px}
 
-.seed-overlay{position:fixed;inset:0;background:linear-gradient(180deg,rgba(2,2,5,0.86),rgba(6,6,12,0.9));display:flex;align-items:center;justify-content:center;z-index:400}
-.seed-card{background:linear-gradient(180deg,#081018,#0c080a);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:420px;text-align:center}
-.seed-card input, .seed-card select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01);color:#fff;margin-top:8px}
-.seed-controls{display:flex;gap:8px;margin-top:10px;justify-content:center}
+/* equipment */
+#equipment-panel{width:300px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.008));border-radius:8px;padding:10px;border:1px solid rgba(255,255,255,0.03)}
+.equip-slot{padding:8px;border-radius:6px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.02);margin-bottom:8px;font-size:14px;position:relative}
+.equip-slot .rune{position:absolute;right:8px;top:4px;width:28px;height:28px;pointer-events:none;opacity:0}
 
-.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:450;background:rgba(2,2,5,0.6)}
+/* merchant */
+#merchant-panel{width:360px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.008));border-radius:8px;padding:10px;border:1px solid rgba(255,255,255,0.03)}
+.merchant-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:rgba(255,255,255,0.01);margin-bottom:6px}
+.merchant-item button{padding:6px 8px;border-radius:6px;border:none;background:#2b3742;color:#fff;cursor:pointer}
+
+/* enchant modal */
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:60}
 .modal.hidden{display:none}
-.modal-card{background:linear-gradient(180deg,#081018,#0b0a12);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:520px}
-.modal-body{max-height:55vh;overflow:auto;padding:6px;margin-top:8px}
-.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.modal-card{background:#061219;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.05);width:420px}
+.modal-actions{display:flex;gap:8px;margin-top:10px}
+.modal-actions button{padding:8px;border-radius:8px;border:none;background:#2b3742;color:white;cursor:pointer}
 
-@media (max-width:920px){ .layout{flex-direction:column} .left{width:auto} .combat-actions button{flex-basis:100%} }
+/* combat */
+#combat{margin-top:12px;text-align:center;position:relative;z-index:5}
+#monster-area{min-height:160px}
+.monster{display:inline-block;width:78%;padding:12px;border-radius:10px;background:linear-gradient(180deg,#092028,#0b2330);border:1px solid rgba(255,255,255,0.03);box-shadow:0 8px 30px rgba(0,0,0,0.6);position:relative}
+.monster.spawn{animation:spawn .36s cubic-bezier(.2,.9,.2,1)}
+@keyframes spawn{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+.monster .status-icons{position:absolute;right:10px;top:8px;display:flex;gap:6px}
+
+/* actions */
+#actions{display:flex;gap:12px;justify-content:center;margin-top:8px}
+#actions button{padding:8px 14px;border-radius:8px;border:none;background:#203240;color:white;cursor:pointer}
+#actions button:disabled{opacity:0.5;cursor:not-allowed}
+
+/* meta row */
+#meta-row{display:flex;gap:12px;margin-top:12px}
+#queue,#loot-section{flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.008));border-radius:8px;padding:10px;border:1px solid rgba(255,255,255,0.03)}
+#monster-queue{display:flex;flex-wrap:wrap;gap:8px}
+.queue-card{padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.02);font-size:13px}
+
+#loot-list{margin-top:8px}
+.item{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:rgba(255,255,255,0.01);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;position:relative}
+.item .actions{display:flex;gap:6px}
+.item .rune{position:absolute;left:8px;top:8px;width:46px;height:46px;pointer-events:none;opacity:0}
+.item:hover{transform:translateY(-3px);transition:all .14s}
+
+/* popups and particles */
+#fx-layer{position:fixed;right:18px;top:90px;z-index:80;pointer-events:none}
+.float-popup{background:linear-gradient(90deg,#fff,#dbeeff);color:#041018;padding:6px 10px;border-radius:10px;margin-top:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);transform:translateY(8px);opacity:0;transition:all .6s}
+.float-popup.show{transform:translateY(0);opacity:1}
+.particle{position:absolute;width:8px;height:8px;border-radius:50%;background:linear-gradient(90deg,#ffd7a6,#ff7d4b);opacity:0.9;pointer-events:none;filter:blur(0.6px);transition:all 1.2s cubic-bezier(.2,.8,.2,1)}
+
+/* rune animation */
+@keyframes runeSpin {0%{transform:rotate(0deg) scale(0.9);opacity:0.6}50%{transform:rotate(180deg) scale(1.06);opacity:1}100%{transform:rotate(360deg) scale(0.98);opacity:0.6}}
+.rune-anim{animation:runeSpin 2.6s linear infinite;mix-blend-mode:screen;}
+.enchant-glow.common{box-shadow:0 0 8px rgba(180,180,200,0.08) inset}
+.enchant-glow.uncommon{box-shadow:0 0 12px rgba(52,211,153,0.08) inset}
+.enchant-glow.rare{box-shadow:0 0 14px rgba(59,130,246,0.09) inset}
+.enchant-glow.epic{box-shadow:0 0 18px rgba(168,85,247,0.11) inset}
+.enchant-glow.legendary{box-shadow:0 0 22px rgba(245,158,11,0.14) inset}
+.enchant-glow.mythic{box-shadow:0 0 28px rgba(239,68,68,0.16) inset}
+
+/* UI overlay & small util */
+.ui-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:120;background:rgba(2,6,23,0.6)}
+.ui-overlay.hidden{display:none}
+.splash-card{background:#061219;padding:20px;border-radius:12px;color:#dfeaff}
+.small{font-size:12px;color:#9fb4d6}
+.scene{transition:opacity .45s ease, transform .45s ease}
+.scene--visible{opacity:1;transform:translateY(0)}
+.scene--hidden{opacity:0;transform:translateY(8px);pointer-events:none}
