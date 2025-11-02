@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>epictextrpg — The Descent Within (Phase 10)</title>
+  <title>epictextrpg — Echoes of the Forgotten (Phase 11)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- Seed overlay / start screen -->
   <div id="seedOverlay" class="seed-overlay" role="dialog" aria-modal="true">
     <div class="seed-card">
-      <h2>epictextrpg — The Descent Within</h2>
+      <h2>epictextrpg — Echoes of the Forgotten</h2>
       <p class="muted">Enter a seed (shareable) or pick Random / Daily. Choose a class to begin Season 1.</p>
       <input id="seedInput" type="text" inputmode="numeric" placeholder="Enter seed or leave blank" />
       <div style="margin-top:8px;">
@@ -33,11 +33,13 @@
     <header class="topbar">
       <div>
         <h1 id="gameTitle">epictextrpg</h1>
-        <div class="subtitle">The Descent Within — Season 1 (Phase 10)</div>
+        <div class="subtitle">Echoes of the Forgotten — Season 1 (Phase 11)</div>
       </div>
       <div class="top-actions">
         <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
         <div class="small muted">Legacy: <span id="legacyPts">0</span></div>
+        <button id="btnLibrary" class="secondary">Library</button>
+        <button id="btnCustomize" class="secondary">Titles & Styles</button>
         <button id="btnMeta" class="secondary">Shrine</button>
         <button id="btnNew" class="secondary">New Run</button>
         <button id="btnDaily" class="secondary">Daily Run</button>
@@ -53,6 +55,7 @@
           <div id="playerCard" class="player-card">
             <div id="playerName" class="player-name">—</div>
             <div id="playerClass" class="small muted">Choose a class</div>
+            <div class="small muted" id="playerTitle">Title: —</div>
             <div class="equip-list muted">
               <div>Weapon: <span id="slotWeapon">None</span></div>
               <div>Armor: <span id="slotArmor">None</span></div>
@@ -86,6 +89,7 @@
             </div>
             <div class="small muted" id="sanityHint">Clear thoughts.</div>
           </div>
+          <div style="margin-top:8px"><button id="btnDreamHub" class="secondary">Enter Dreamscape</button></div>
         </section>
 
         <section class="panel-block">
@@ -176,6 +180,40 @@
     </div>
   </div>
 
+  <!-- Dreamscape hub -->
+  <div id="dreamHubModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Dreamscape — Echoes</h3>
+      <div id="dreamHubBody" class="modal-body">
+        <div class="small muted">The dreamshroud resonates with your past. Choose:</div>
+        <div style="margin-top:8px">
+          <div class="item-row"><div><strong>The Echoing Merchant</strong><div class="small muted">Exchange sanity for rare relics</div></div><div><button class="secondary" onclick="dreamHubMerchant()">Visit</button></div></div>
+          <div class="item-row"><div><strong>The Mirror of Factions</strong><div class="small muted">View and change your alignment (cost)</div></div><div><button class="secondary" onclick="dreamHubFaction()">View</button></div></div>
+          <div class="item-row"><div><strong>Seek an Echo</strong><div class="small muted">Spend fragments for a powerful choice</div></div><div><button class="secondary" onclick="dreamHubEcho()">Seek</button></div></div>
+        </div>
+      </div>
+      <div class="modal-actions"><button onclick="closeDreamHub()" class="secondary">Leave Dreamscape</button></div>
+    </div>
+  </div>
+
+  <!-- Library -->
+  <div id="libraryModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Library of Shadows</h3>
+      <div id="libraryContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeLibrary()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Customization -->
+  <div id="customModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Titles & Styles</h3>
+      <div id="customContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeCustomize()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
   <!-- Journal / lore -->
   <div id="journalModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
@@ -208,7 +246,7 @@
       <div class="modal-body">
         <p><strong>Created by:</strong> Jeremy Frith</p>
         <p><strong>Development Assistance:</strong> GPT-5 Thinking mini</p>
-        <p class="small muted">Phase 10 — The Descent Within</p>
+        <p class="small muted">Phase 11 — Echoes of the Forgotten</p>
       </div>
       <div class="modal-actions"><button id="closeCredits" class="secondary">Close</button></div>
     </div>
