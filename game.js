@@ -1,7 +1,5 @@
-/* Phase 10 — Full Merge
-   Epic Text RPG — The Descent Within
-   Text-only, seeded RNG, autosave, rarity, trait prefixes/suffixes,
-   dungeon node maps, legacy meta progression, class mastery, sanity/dreams.
+/* Phase 11 — Echoes of the Forgotten
+   Integrated: Phase10 base + NPCs, Factions, Library, Dreamscape Hub, Customization
 */
 
 /* ---------- tiny helpers ---------- */
@@ -23,97 +21,70 @@ function rInt(a,b){ return Math.floor(rnd()*(b-a+1))+a; }
 function rChoice(arr){ return arr[Math.floor(rnd()*arr.length)]; }
 
 /* ---------- persistence keys ---------- */
-const SAVE_KEY = 'epictextrpg_v10_save';
-const META_KEY = 'epictextrpg_v10_meta';
-const LEADER_KEY = 'epictextrpg_v10_leader';
+const SAVE_KEY = 'epictextrpg_v11_save';
+const META_KEY = 'epictextrpg_v11_meta';
+const LEADER_KEY = 'epictextrpg_v11_leader';
 
-/* ---------- rarity tiers ---------- */
+/* ---------- base tiers, classes, items, monsters (condensed) ---------- */
 const RARITY_TIERS = [
-  { id:'Common', name:'Common', color:'#bdbdbd', chance:50, mul:1.0, tag:'[C]' },
-  { id:'Uncommon', name:'Uncommon', color:'#3fa34d', chance:25, mul:1.2, tag:'[UC]' },
-  { id:'Rare', name:'Rare', color:'#2979ff', chance:15, mul:1.4, tag:'[R]' },
-  { id:'Epic', name:'Epic', color:'#a020f0', chance:7, mul:1.7, tag:'[E]' },
-  { id:'Legendary', name:'Legendary', color:'#ffd700', chance:2, mul:2.2, tag:'[L]' },
-  { id:'Mythic', name:'Mythic', color:'#ff4040', chance:1, mul:2.8, tag:'[M]' }
+  { id:'Common', chance:50, mul:1.0, tag:'[C]' },
+  { id:'Uncommon', chance:25, mul:1.2, tag:'[UC]' },
+  { id:'Rare', chance:15, mul:1.4, tag:'[R]' },
+  { id:'Epic', chance:7, mul:1.7, tag:'[E]' },
+  { id:'Legendary', chance:2, mul:2.2, tag:'[L]' },
+  { id:'Mythic', chance:1, mul:2.8, tag:'[M]' }
 ];
-function rollRarityBias(bias=0){
-  const pool = RARITY_TIERS.map(r=>({ ...r, weight: Math.max(1, r.chance + (r.chance>=15? bias : Math.floor(bias/2)) ) }));
-  const total = pool.reduce((s,p)=>s+p.weight,0); let roll = rnd()*total;
-  for(const p of pool){ if(roll <= p.weight) return p; roll -= p.weight; }
-  return pool[0];
-}
 
-/* ---------- class data & skill trees ---------- */
 const CLASS_DATA = {
   Warrior: { name:'Warrior', passive:'+10% damage', ability:{id:'Power Slash',desc:'Deal 150% damage'}, skills:[
     {level:2,choices:[{id:'hp+6',label:'+6 HP'},{id:'atk+2',label:'+2 ATK'}]},
     {level:4,choices:[{id:'shield_bash',label:'Shield Bash (stun)'},{id:'crit+5',label:'+5% Crit'}]}
-  ], mastery:{Shield:['Shield Wall','Fortify'],Sword:['Berserk','Precision']}},
+  ]},
   Mage: { name:'Mage', passive:'+2 MP / turn', ability:{id:'Fireball',desc:'Deal heavy fire'}, skills:[
     {level:2,choices:[{id:'mp+6',label:'+6 MP'},{id:'mag+2',label:'+2 MAG'}]},
     {level:4,choices:[{id:'arcane_surge',label:'Arcane Surge (+20% magic dmg)'},{id:'freeze_master',label:'Frost Bolt (freeze)'}]}
-  ], mastery:{Fire:['Flameheart','Combustion'],Frost:['Iceshroud','Glacier']}},
+  ]},
   Rogue: { name:'Rogue', passive:'+10% crit', ability:{id:'Backstab',desc:'Double damage if first strike'}, skills:[
     {level:2,choices:[{id:'crit+5',label:'+5% Crit'},{id:'atk+2',label:'+2 ATK'}]},
     {level:4,choices:[{id:'evasion+6',label:'+6% Evasion'},{id:'poison_edge',label:'Poison on hit'}]}
-  ], mastery:{Shadow:['Evasion','Cloak'],Poison:['Toxicology','Bleedmaster']}}
+  ]}
 };
 
-/* ---------- prefixes & suffixes (traits) ---------- */
-const PREFIXES = [
-  {id:'blazing',label:'Blazing',effect:{fireDmg:1},rarityBias:1},
-  {id:'vorpal',label:'Vorpal',effect:{crit:6},rarityBias:2},
-  {id:'ancient',label:'Ancient',effect:{atk:2,def:1},rarityBias:3},
-  {id:'vampiric',label:'Vampiric',effect:{lifesteal:5},rarityBias:3},
-  {id:'void',label:'Void',effect:{voidDmg:3},rarityBias:4}
-];
-const SUFFIXES = [
-  {id:'of_fury',label:'of Fury',effect:{atk:2}},
-  {id:'of_stability',label:'of Stability',effect:{def:2}},
-  {id:'of_the_night',label:'of the Night',effect:{crit:4}},
-  {id:'of_whispers',label:'of Whispers',effect:{xpBoost:5}},
-  {id:'of_ages',label:'of Ages',effect:{hp:8}}
-];
+const WEAPONS = { Common:[{name:'Short Sword',effect:{atk:1}}], Uncommon:[{name:'Iron Sword',effect:{atk:2}}], Rare:[{name:'Knight Blade',effect:{atk:4}}], Epic:[{name:'Bloodfang',effect:{atk:5}}], Legendary:[{name:'Shadow Reaver',effect:{atk:8}}], Mythic:[{name:'Abyssal Edge',effect:{atk:12}}] };
+const ARMOR = { Common:[{name:'Leather Tunic',effect:{def:1}}], Uncommon:[{name:'Chainmail',effect:{def:2}}], Rare:[{name:'Plate Mail',effect:{def:4}}], Epic:[{name:'Wraith Armor',effect:{def:5}}], Legendary:[{name:'Fallen King Armor',effect:{def:7}}], Mythic:[{name:'Celestial Carapace',effect:{def:10}}] };
+const RELICS = { Common:[{name:'Old Coin'}], Uncommon:[{name:'Soul Charm'}], Rare:[{name:'Heart of Cinders'}], Epic:[{name:'Infernal Sigil'}], Legendary:[{name:'Tome of the Void'}], Mythic:[{name:'Worldseed'}] };
 
-/* ---------- item pools ---------- */
-const WEAPONS = {
-  Common:[{name:'Short Sword',effect:{atk:1}}],Uncommon:[{name:'Iron Sword',effect:{atk:2}}],Rare:[{name:"Knight's Blade",effect:{atk:4}}],Epic:[{name:'Bloodfang',effect:{atk:5,lifesteal:true}}],Legendary:[{name:'Shadow Reaver',effect:{atk:8,doubleStrike:25}}],Mythic:[{name:'Abyssal Edge',effect:{atk:12,voidDmg:6}}]
-};
-const ARMOR = {
-  Common:[{name:'Leather Tunic',effect:{def:1}}],Uncommon:[{name:'Chainmail',effect:{def:2}}],Rare:[{name:'Plate Mail',effect:{def:4}}],Epic:[{name:'Wraith Armor',effect:{def:5,poisonImmune:true}}],Legendary:[{name:'Armor of the Fallen King',effect:{def:7,atk:3}}],Mythic:[{name:'Celestial Carapace',effect:{def:10,reflect:6}}]
-};
-const RELICS = {
-  Common:[{name:'Old Coin',effect:{gold:5}}],Uncommon:[{name:'Soul Charm',effect:{xpBoost:10}}],Rare:[{name:'Heart of Cinders',effect:{postHeal:5}}],Epic:[{name:'Infernal Sigil',effect:{spellBoost:25}}],Legendary:[{name:'Tome of the Void',effect:{unlockSpell:'Voidstrike'}}],Mythic:[{name:'Worldseed',effect:{mythicRipple:true}}]
-};
-
-/* ---------- monsters & bosses ---------- */
 const MONSTERS = {
-  Common:[ {name:'Ratling',hp:10,atk:3,def:1,xp:5,gold:3,flavor:'A small, quick vermin.'}, {name:'Slime',hp:8,atk:2,def:0,xp:4,gold:2,flavor:'A gelatinous ignoramus.'} ],
-  Uncommon:[ {name:'Shadow Wolf',hp:18,atk:6,def:2,xp:14,gold:10,flavor:'Silent predator.'} ],
-  Rare:[ {name:'Grave Knight',hp:35,atk:10,def:4,xp:28,gold:20,flavor:'A blade-bound revenant.'} ],
-  Epic:[ {name:'Vampire Lord',hp:60,atk:15,def:5,xp:60,gold:45,flavor:'Hunger in a crown.'} ],
-  Legendary:[ {name:'The Hollow King',hp:150,atk:20,def:8,xp:250,gold:120,flavor:'Throne of bones.'} ],
-  Mythic:[ {name:'World Serpent',hp:500,atk:45,def:18,xp:1000,gold:500,flavor:'Terrible, vast, eternal.'} ]
+  Common:[ {name:'Ratling',hp:10,atk:3,def:1,xp:5,gold:3} ],
+  Uncommon:[ {name:'Shadow Wolf',hp:18,atk:6,def:2,xp:14,gold:10} ],
+  Rare:[ {name:'Grave Knight',hp:35,atk:10,def:4,xp:28,gold:20} ],
+  Epic:[ {name:'Vampire Lord',hp:60,atk:15,def:5,xp:60,gold:45} ],
+  Legendary:[ {name:'The Hollow King',hp:150,atk:20,def:8,xp:250,gold:120} ],
+  Mythic:[ {name:'World Serpent',hp:500,atk:45,def:18,xp:1000,gold:500} ]
 };
 
 const BOSSES = [
   { id:'hollowking', name:'The Hollow King', hp:150, phases:[
       {hpPct:0.75, action:'Summon Shades'}, {hpPct:0.45, action:'Dark Nova'}, {hpPct:0.18, action:'Enrage'}
-    ], drops:['Crown of Eternity','Tome of the Void'] },
-  { id:'eclipsedragon', name:'Eclipse Dragon', hp:200, phases:[
-      {hpPct:0.75,action:'Shadow Breath'}, {hpPct:0.35,action:'Wings of Night'}
-    ], drops:['Dragon Heart','Shadow Reaver'] }
+    ], drops:['Crown of Eternity','Tome of the Void'] }
 ];
 
 /* ---------- statuses ---------- */
-const STATUS = {
-  burn: { id:'burn', name:'Burn', tick:2, desc:'Takes burn damage per turn' },
-  poison: { id:'poison', name:'Poison', tick:3, desc:'Takes poison damage per turn' },
-  freeze: { id:'freeze', name:'Freeze', skip:true, desc:'Skip next turn' },
-  weaken: { id:'weaken', name:'Weaken', mul:0.75, desc:'Reduced attack' }
+const STATUS = { burn:{tick:2}, poison:{tick:3}, freeze:{skip:true}, weaken:{mul:0.75} };
+
+/* ---------- NPCs ---------- */
+const NPCS = {
+  merchant: { id:'merchant', name:'The Merchant', memory:[], baseText:'A grizzled trader, always counting.', shopBias:0 },
+  seer: { id:'seer', name:'The Seer', memory:[], baseText:'Eyes like old moons. Speaks in fragments.' },
+  knight: { id:'knight', name:'The Fallen Knight', memory:[], baseText:'Steel stained; honor imperfect.' },
+  witch: { id:'witch', name:'Witch of Thorns', memory:[], baseText:'Offers dangerous bargains.' }
 };
 
-/* ---------- DREAMS ---------- */
+/* ---------- factions ---------- */
+/* three factions: Order, Void, Wilds */
+const FACTIONS = { Order:{id:'Order',desc:'Purity & Clarity'}, Void:{id:'Void',desc:'Corruption & Power'}, Wilds:{id:'Wilds',desc:'Primal Balance'} };
+
+/* ---------- dreams (short set) ---------- */
 const DREAMS = [
   { id:'memory_child', title:'A Childhood Memory', text:`You stand at a soot-smudged window.\nA small hand knocks — it is yours.\nDo you reach?`, choices:[
       {label:'Reach', san:5, reward: s=>{ addJournal('You touched the memory and felt warmth.'); s.player.gold=(s.player.gold||0)+8; log('Dream: +8 gold'); }},
@@ -132,9 +103,10 @@ const DREAMS = [
 /* ---------- state ---------- */
 let state = {
   seed:null, runId:Date.now(), player:null, floorMap:{}, currentEnemy:null, inCombat:false,
-  relics:[], legacyRelics:[], journal:[], meta:{fragments:0,upgrades:[],legacyPts:0,unlockedClasses:[]}, achievements:{}, stats:{kills:0,relics:0,bosses:0,floors:0}, shop:{tier:1}
+  relics:[], legacyRelics:[], journal:[], meta:{fragments:0,upgrades:[],legacyPts:0,unlockedClasses:[]}, achievements:{}, stats:{kills:0,relics:0,bosses:0,floors:0}, shop:{tier:1},
+  npcMemory:{}, factions:{ Order:0, Void:0, Wilds:0 }, library:{}, customization:{title:null,style:'default'}
 };
-/* sanity defaults (0..100) */
+/* sanity defaults */
 state.sanity = state.sanity ?? 100;
 state.sanityDecay = 3;
 state.sanityRecoverRest = 10;
@@ -144,10 +116,10 @@ state.sanityThresholds = { stable:70, uneasy:40, fragile:15 };
 function showSaveToast(){ const el=$('saveToast'); el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),900); }
 function fullSave(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); localStorage.setItem(META_KEY, JSON.stringify(state.meta)); showSaveToast(); }catch(e){ console.warn('save failed',e); } }
 function fullLoad(){ const s = localStorage.getItem(SAVE_KEY); if(!s) return false; try{ state = JSON.parse(s); state.meta = JSON.parse(localStorage.getItem(META_KEY)||'{}')||state.meta; if(state.seed) initSeed(state.seed); derivePlayer(); renderAll(); log('📂 Save loaded'); return true; }catch(e){ console.warn('load fail', e); return false; } }
-function resetAll(){ if(!confirm('Reset all saves and meta?')) return; localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); state={seed:null,runId:Date.now(),player:null,floorMap:{},currentEnemy:null,inCombat:false,relics:[],legacyRelics:[],journal:[],meta:{fragments:0,upgrades:[],legacyPts:0,unlockedClasses:[]},achievements:{},stats:{kills:0,relics:0,bosses:0,floors:0},shop:{tier:1}}; state.sanity=100; fullSave(); renderAll(); log('🔁 Reset done'); }
+function resetAll(){ if(!confirm('Reset all saves and meta?')) return; localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); state={seed:null,runId:Date.now(),player:null,floorMap:{},currentEnemy:null,inCombat:false,relics:[],legacyRelics:[],journal:[],meta:{fragments:0,upgrades:[],legacyPts:0,unlockedClasses:[]},achievements:{},stats:{kills:0,relics:0,bosses:0,floors:0},shop:{tier:1},npcMemory:{},factions:{Order:0,Void:0,Wilds:0},library:{},customization:{title:null,style:'default'}}; state.sanity=100; fullSave(); renderAll(); log('🔁 Reset done'); }
 
-/* ---------- derived player ---------- */
-function applyRelicEffects(){ state.goldMult=1; state.xpMult=1; state.spellBoost=0; for(const r of state.relics.concat(state.legacyRelics||[])){ if(r.name==='Old Coin') state.goldMult+=0.10; if(r.name==='Soul Charm') state.xpMult+=0.10; if(r.name==='Infernal Sigil') state.spellBoost+=0.25; if(r.name==='Worldseed') state.meta.upgrades.push('worldseed'); } }
+/* ---------- derive player ---------- */
+function applyRelicEffects(){ state.goldMult=1; state.xpMult=1; state.spellBoost=0; for(const r of state.relics.concat(state.legacyRelics||[])){ if(r.name==='Old Coin') state.goldMult+=0.10; if(r.name==='Soul Charm') state.xpMult+=0.10; if(r.name==='Infernal Sigil') state.spellBoost+=0.25; } }
 function derivePlayer(){
   if(!state.player) return;
   applyRelicEffects();
@@ -162,22 +134,20 @@ function derivePlayer(){
   if(p.mp>p.maxMp) p.mp=p.maxMp;
 }
 
-/* ---------- naming & trait generation ---------- */
-function rollPrefix(chanceBias=0){ if(rnd() < 0.35 + chanceBias*0.05) return rChoice(PREFIXES); return null; }
-function rollSuffix(chanceBias=0){ if(rnd() < 0.35 + chanceBias*0.05) return rChoice(SUFFIXES); return null; }
-function makeNamedItem(base, rarity){
-  const bias = (RARITY_TIERS.findIndex(r=>r.id===rarity) || 0);
-  const pre = rollPrefix(bias);
-  const suf = rollSuffix(bias);
-  const nameParts = [];
-  if(pre) nameParts.push(pre.label);
-  nameParts.push(base.name);
-  if(suf) nameParts.push(suf.label);
-  const finalName = nameParts.join(' ');
-  const effect = Object.assign({}, base.effect || {});
-  if(pre) Object.assign(effect, pre.effect);
-  if(suf) Object.assign(effect, suf.effect);
-  return { baseName: base.name, name: finalName, rarity, color: RARITY_TIERS.find(r=>r.id===rarity).color, effect, prefix:pre?.id||null, suffix:suf?.id||null };
+/* ---------- small utilities ---------- */
+function addJournal(text){ state.journal = state.journal || []; state.journal.push({time:Date.now(),text}); fullSave(); }
+function noteLibrary(key,title,body){ state.library = state.library || {}; if(!state.library[key]) state.library[key] = {title, body, discovered: Date.now()}; fullSave(); }
+function nudgeFaction(faction,amount,reason){ if(!FACTIONS[faction]) return; state.factions[faction] = (state.factions[faction]||0) + amount; log(`Faction ${faction} ${amount>0?'+':''}${amount} — ${reason||''}`); addJournal(`Faction shift: ${faction} ${amount} (${reason||''})`); fullSave(); }
+
+/* ---------- naming and loot helpers ---------- */
+function rollRarityBias(bias=0){
+  const pool = RARITY_TIERS.map(r=>({ ...r, weight: Math.max(1, r.chance + Math.floor(bias) ) }));
+  const total = pool.reduce((s,p)=>s+p.weight,0); let roll = rnd()*total;
+  for(const p of pool){ if(roll <= p.weight) return p; roll -= p.weight; }
+  return pool[0];
+}
+function makeNamedItem(base, tierId){
+  return { name: base.name, baseName: base.name, rarity: tierId, type: base.effect? 'weapon' : 'misc', effect: base.effect || {} };
 }
 
 /* ---------- new run ---------- */
@@ -210,10 +180,9 @@ function newRun(classKey, seed, daily=false){
   if(daily) { log('Daily run started'); fullSave(); renderAll(); }
 }
 
-/* ---------- floor/node generation ---------- */
+/* ---------- nodes / map ---------- */
 function genFloor(n){
   if(state.floorMap['f'+n]) return state.floorMap['f'+n];
-  // create branching nodes list (array of node objects). Each node: {type,desc}
   const nodes=[];
   const total = 4 + Math.min(8, n);
   for(let i=0;i<total;i++){
@@ -226,12 +195,11 @@ function genFloor(n){
   }
   nodes.push({type:'stairs'});
   if(n%3===0) nodes.push({type:'boss'});
-  // pointer selects next available node index; we present choices (2) to player each time
   state.floorMap['f'+n] = { nodes, pointer:0 };
   return state.floorMap['f'+n];
 }
 
-/* ---------- enter a node (player chooses from map) ---------- */
+/* ---------- entering nodes ---------- */
 function enterRoom(){
   if(!state.player){ alert('Start a run first'); return; }
   if(state.inCombat){ log('Finish combat first.'); return; }
@@ -240,16 +208,14 @@ function enterRoom(){
   if(fobj.pointer >= fobj.nodes.length){
     descendFloor(); fullSave(); return;
   }
-  // present options: show up to 2 next nodes to choose
   const options = [];
   for(let i=fobj.pointer;i<Math.min(fobj.pointer+2,fobj.nodes.length);i++) options.push({idx:i, node:fobj.nodes[i]});
-  // build choices UI
   let html = `<div class="small">Choose your path (Floor ${floor})</div><div style="margin-top:8px">`;
   options.forEach(o=> html += `<div class="item-row"><div><strong>${o.node.type.toUpperCase()}</strong> <div class="small muted">${nodeFlavor(o.node.type)}</div></div><div><button class="secondary" onclick="chooseNode(${o.idx})">Enter</button></div></div>`);
   html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`;
   $('shopPanel').innerHTML = html;
   window.chooseNode = function(idx){
-    fobj.pointer = idx+1; // move pointer past chosen
+    fobj.pointer = idx+1;
     const room = fobj.nodes[idx];
     log(`➡ You traverse: ${room.type}`);
     if(room.type==='monster') startMonster();
@@ -261,8 +227,6 @@ function enterRoom(){
     renderAll(); fullSave();
   };
 }
-
-/* small descriptive text for node types */
 function nodeFlavor(t){
   if(t==='monster') return 'Danger: foes await';
   if(t==='treasure') return 'Glimmering chest';
@@ -283,7 +247,6 @@ function descendFloor(){
   state.stats.floors = Math.max(state.stats.floors, state.player.floor);
   cineShow(`⬇️ Descend to Floor ${state.player.floor}...`,900).then(()=>{
     log('Descended to floor '+state.player.floor);
-    // sanity strain on descent
     applySanityChange(-Math.floor(state.sanityDecay/2), 'Descent strain');
     if(state.player.floor % 3 === 0) enterTown();
     maybeTriggerDreamAfterFloor();
@@ -291,7 +254,8 @@ function descendFloor(){
   });
 }
 
-/* ---------- monster generation & combat ---------- */
+/* ---------- monsters & bosses ---------- */
+function weightedChoiceObj(weights){ const total = Object.values(weights).reduce((a,b)=>a+b,0); let roll = rnd()*total; for(const k of Object.keys(weights)){ if(roll <= weights[k]) return k; roll -= weights[k]; } return Object.keys(weights)[0]; }
 function getAdjustedWeights(floor){
   const w={Common:60,Uncommon:25,Rare:10,Epic:4,Legendary:1,Mythic:0};
   if(floor>4){ w.Rare+=5; w.Uncommon-=3; }
@@ -299,12 +263,6 @@ function getAdjustedWeights(floor){
   if(floor>14){ w.Legendary+=1; w.Epic+=2; w.Common-=4;}
   Object.keys(w).forEach(k=>{ if(w[k]<1) w[k]=1; });
   return w;
-}
-function weightedChoiceObj(weights){
-  const total = Object.values(weights).reduce((a,b)=>a+b,0);
-  let roll = rnd()*total;
-  for(const k of Object.keys(weights)){ if(roll <= weights[k]) return k; roll -= weights[k]; }
-  return Object.keys(weights)[0];
 }
 function getRandomMonsterForFloor(floor){
   const weights=getAdjustedWeights(floor);
@@ -321,11 +279,11 @@ function getRandomMonsterForFloor(floor){
   const patterns = ['Aggressive','Defensive','Trickster'];
   const pattern = rChoice(patterns);
   const name = `${tier.tag} ${base.name}`;
-  return { name, baseName:base.name, rarity:tier.id, color:tier.color, hp, currentHp:hp, atk, def, xp, gold, flavor:base.flavor, pattern };
+  return { name, baseName:base.name, rarity:tier.id, color:null, hp, currentHp:hp, atk, def, xp, gold, pattern };
 }
 
-function startMonster(){ const floor=state.player.floor||1; const enemy = getRandomMonsterForFloor(floor); state.currentEnemy = {...enemy, status:[], isBoss:false}; state.inCombat=true; generateEnemyIntent(); log(`⚔️ ${enemy.rarity} ${enemy.baseName} appears! ${enemy.flavor || ''}`); fullSave(); renderAll(); }
-function startBoss(){ const floor=state.player.floor||1; const tpl = rChoice(BOSSES); const boss = JSON.parse(JSON.stringify(tpl)); boss.currentHp = boss.hp + floor*6; boss.status=[]; boss.isBoss=true; boss.name = `${boss.name}`; state.currentEnemy = boss; state.inCombat=true; cineShow(`🔥 Boss: ${boss.name} emerges!`,1200).then(()=>{ log('Boss: '+boss.name); generateEnemyIntent(); fullSave(); renderAll(); }); }
+function startMonster(){ const floor=state.player.floor||1; const enemy = getRandomMonsterForFloor(floor); state.currentEnemy = {...enemy, status:[], isBoss:false}; state.inCombat=true; generateEnemyIntent(); log(`⚔️ ${enemy.rarity} ${enemy.baseName} appears!`); noteLibrary('monster_'+enemy.baseName, enemy.baseName, `Encountered: ${enemy.baseName}`); fullSave(); renderAll(); }
+function startBoss(){ const floor=state.player.floor||1; const tpl = rChoice(BOSSES); const boss = JSON.parse(JSON.stringify(tpl)); boss.currentHp = boss.hp + floor*6; boss.status=[]; boss.isBoss=true; boss.name = `${boss.name}`; state.currentEnemy = boss; state.inCombat=true; cineShow(`🔥 Boss: ${boss.name} emerges!`,1200).then(()=>{ log('Boss: '+boss.name); generateEnemyIntent(); noteLibrary('boss_'+boss.id, boss.name, `Boss: ${boss.name}`); fullSave(); renderAll(); }); }
 
 /* ---------- intents ---------- */
 function generateEnemyIntent(){
@@ -349,8 +307,8 @@ function castSpell(spell){ if(!state.inCombat || !state.currentEnemy) return; co
 function useItemCombat(){ const p=state.player; if(p.potions>0){ p.potions--; const heal=rInt(6,12); p.hp=Math.min(p.maxHp,p.hp+heal); log(`🧴 Potion +${heal}`); showFloating(`+${heal}`,'heal'); } else if(p.ethers>0){ p.ethers--; const m=rInt(4,8); p.mp=Math.min(p.maxMp,p.mp+m); log(`🔮 Ether +${m}`); showFloating(`+${m} MP`,'heal'); } else log('No items'); doEnemyIntent(); fullSave(); renderAll(); }
 function attemptRun(){ if(!state.inCombat) return; if(rnd()<0.5){ log('🏃 You escape'); state.inCombat=false; state.currentEnemy=null; renderAll(); fullSave(); } else { log('✋ Escape failed'); doEnemyIntent(); fullSave(); } }
 
-/* ---------- status effects ---------- */
-function applyStatus(target, key, duration=2){ target.status = target.status || []; const existing = target.status.find(s=>s.k===key); if(existing){ existing.t = Math.max(existing.t,duration); } else target.status.push({k:key,t:duration}); }
+/* ---------- statuses ---------- */
+function applyStatus(target, key, duration=2){ target.status = target.status || []; const existing = target.status.find(s=>s.k===key); if(existing){ existing.t = Math.max(existing.t,duration); } else target.status.push({k:key,t:duration}); addJournal(`${target.name || 'Target'} afflicted by ${key}`); }
 function tickStatus(entity){
   if(!entity || !entity.status) return;
   const rem=[]; for(const s of entity.status){
@@ -388,7 +346,7 @@ function doEnemyIntent(){
 function onVictory(){ const e=state.currentEnemy; if(!e) return; const isBoss = !!e.isBoss; const goldGain = Math.max(1, Math.round(((e.gold||5) + (state.player.floor||1)*2) * (state.goldMult||1))); state.player.gold = (state.player.gold||0) + goldGain; log(`🏆 Defeated ${e.name}! +${goldGain} gold.`); state.stats.kills = (state.stats.kills||0) + 1; if(isBoss) state.stats.bosses = (state.stats.bosses||0) + 1;
   // loot
   const drop = generateLootForEnemy(e.rarity || 'Common', state.player.floor || 1);
-  if(drop){ if(drop.type==='relic'){ state.relics.push({name:drop.name, rarity:drop.rarity, color:drop.color}); state.stats.relics++; log(`🎁 Relic: ${drop.rarity} ${drop.name}`); addJournal(`Found relic: ${drop.rarity} ${drop.name} — ${flavorForRelic(drop.name)}`); if(drop.rarity==='Mythic') applySanityChange(-8,'Glimpse of the Mythic'); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Item: ${drop.rarity} ${drop.name}`); addJournal(`Found item: ${drop.rarity} ${drop.name}`); } } else { if(rnd()<0.25){ state.player.potions=(state.player.potions||0)+1; log('🧴 Found a potion'); } }
+  if(drop){ if(drop.type==='relic'){ state.relics.push({name:drop.name, rarity:drop.rarity}); state.stats.relics++; log(`🎁 Relic: ${drop.rarity} ${drop.name}`); noteLibrary('relic_'+drop.name, drop.name, `Relic: ${drop.name}`); if(drop.rarity==='Mythic') applySanityChange(-8,'Glimpse of the Mythic'); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Item: ${drop.rarity} ${drop.name}`); noteLibrary('item_'+drop.name, drop.name, `Item: ${drop.name}`); } } else { if(rnd()<0.25){ state.player.potions=(state.player.potions||0)+1; log('🧴 Found a potion'); } }
   const xpGain = Math.max(1, Math.round((e.xp||5) * ({Common:1,Uncommon:1.25,Rare:1.5,Epic:2,Legendary:3,Mythic:5})[e.rarity||'Common'])); state.player.xp = (state.player.xp||0) + xpGain; checkLevel(); state.currentEnemy=null; state.inCombat=false; derivePlayer(); fullSave(); renderAll(); }
 
 /* ---------- loot generation ---------- */
@@ -410,7 +368,7 @@ function generateLootForEnemy(enemyRarity, floor){
   return item;
 }
 
-/* ---------- leveling & skill modal ---------- */
+/* ---------- leveling & skills ---------- */
 function checkLevel(){ const p=state.player; if(!p) return; const xpTo = 8 + p.level * 6; while(p.xp >= xpTo){ p.xp -= xpTo; p.level++; log(`⬆️ Level ${p.level}`); showLevelModal(p); derivePlayer(); fullSave(); } }
 
 function showLevelModal(player){
@@ -427,11 +385,11 @@ function showLevelModal(player){
 
 function applySkillChoice(player, choice){
   if(!choice) return;
-  if(choice.id==='hp+5' || choice.id==='hp+6') player.baseHp += parseInt(choice.id.split('+')[1] || '5');
-  if(choice.id==='atk+1' || choice.id==='atk+2') player.baseAtk += parseInt(choice.id.split('+')[1] || '1');
+  if(choice.id && choice.id.startsWith('hp+')) player.baseHp += parseInt(choice.id.split('+')[1] || '5');
+  if(choice.id && choice.id.startsWith('atk+')) player.baseAtk += parseInt(choice.id.split('+')[1] || '1');
   if(choice.id==='crit+5') player.crit = (player.crit||0) + 5;
-  if(choice.id==='mp+5' || choice.id==='mp+6') player.mp += parseInt(choice.id.split('+')[1] || '5');
-  if(choice.id==='mag+1' || choice.id==='mag+2') player.mag += parseInt(choice.id.split('+')[1] || '1');
+  if(choice.id && choice.id.startsWith('mp+')) player.mp += parseInt(choice.id.split('+')[1] || '5');
+  if(choice.id && choice.id.startsWith('mag+')) player.mag += parseInt(choice.id.split('+')[1] || '1');
   if(choice.id==='shield_bash') player.skills = (player.skills||[]).concat('Shield Bash');
   if(choice.id==='arcane_surge') player.spellBoost = (player.spellBoost||0) + 0.20;
   if(choice.id==='poison_edge') player.poisonOnHit = true;
@@ -439,10 +397,10 @@ function applySkillChoice(player, choice){
 }
 
 /* ---------- chest / shop / events / town ---------- */
-function openChest(){ if(!state.player) return; if(rnd() < 0.55){ const drop = generateLootForEnemy('Common', state.player.floor||1); if(drop.type==='relic'){ state.relics.push({name:drop.name, rarity:drop.rarity, color:drop.color}); state.stats.relics++; log(`🎁 Chest: Relic ${drop.rarity} ${drop.name}`); addJournal(`Chest: Relic ${drop.rarity} ${drop.name}`); if(drop.rarity==='Legendary') applySanityChange(-4,'Glimpse of Legend'); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Chest: Item ${drop.rarity} ${drop.name}`); addJournal(`Chest: Item ${drop.rarity} ${drop.name}`); } } else { const g = rInt(6,26) + (state.player.floor||1)*2; state.player.gold = (state.player.gold||0) + Math.round(g * (state.goldMult||1)); log(`💰 Chest: +${Math.round(g * (state.goldMult||1))} gold.`); } fullSave(); renderAll(); }
+function openChest(){ if(!state.player) return; if(rnd() < 0.55){ const drop = generateLootForEnemy('Common', state.player.floor||1); if(drop.type==='relic'){ state.relics.push({name:drop.name, rarity:drop.rarity}); state.stats.relics++; log(`🎁 Chest: Relic ${drop.rarity} ${drop.name}`); addJournal(`Chest: Relic ${drop.rarity} ${drop.name}`); if(drop.rarity==='Legendary') applySanityChange(-4,'Glimpse of Legend'); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Chest: Item ${drop.rarity} ${drop.name}`); addJournal(`Chest: Item ${drop.rarity} ${drop.name}`); } } else { const g = rInt(6,26) + (state.player.floor||1)*2; state.player.gold = (state.player.gold||0) + Math.round(g * (state.goldMult||1)); log(`💰 Chest: +${Math.round(g * (state.goldMult||1))} gold.`); } fullSave(); renderAll(); }
 
 let lastShop = [];
-function openShop(){ if(state.inCombat){ log('Cannot shop during combat'); return; } const pool = equipmentPoolPreview(); lastShop = []; for(let i=0;i<3;i++){ lastShop.push(makeNamedItem(rChoice(pool), rollRarityBias(state.shop.tier).id)); } lastShop.push({ baseName:'Potion', type:'consumable', name:'Potion', cost:5}); lastShop.push({ baseName:'Ether', type:'consumable', name:'Ether', cost:5}); let html = `<div class="small">Merchant's Wares (Tier ${state.shop.tier})</div><div class="shop-list" style="margin-top:8px">`; lastShop.forEach((it,idx)=>{ const rarityClass = `rarity-${(it.rarity||'Common').toLowerCase()}`; html += `<div class="item-row"><div><strong style="color:${it.color||'#bdbdbd'}">${it.name || it.baseName}</strong><div class="small muted">${it.type||''} ${it.rarity?` • ${it.rarity}`:''}</div></div><div><span class="small">${it.cost||Math.max(3,Math.round(10*(it.effect?.atk||1))) }g</span> <button class="secondary" onclick="buy(${idx})">Buy</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; log('🏪 Merchant appears'); fullSave(); }
+function openShop(){ if(state.inCombat){ log('Cannot shop during combat'); return; } const pool = equipmentPoolPreview(); lastShop = []; for(let i=0;i<3;i++){ const base = rChoice(pool); const tier = rollRarityBias(state.shop.tier); lastShop.push(makeNamedItem(base, tier.id)); } lastShop.push({ baseName:'Potion', type:'consumable', name:'Potion', cost:5}); lastShop.push({ baseName:'Ether', type:'consumable', name:'Ether', cost:5}); let html = `<div class="small">Merchant's Wares (Tier ${state.shop.tier})</div><div class="shop-list" style="margin-top:8px">`; lastShop.forEach((it,idx)=>{ html += `<div class="item-row"><div><strong>${it.name}</strong><div class="small muted">${it.type||''} ${it.rarity?` • ${it.rarity}`:''}</div></div><div><span class="small">${it.cost||Math.max(3,Math.round(10)) }g</span> <button class="secondary" onclick="buy(${idx})">Buy</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; log('🏪 Merchant appears'); fullSave(); }
 
 function buy(idx){ const it = lastShop[idx]; if(!it) return; if(!state.player){ log('Start run first'); return; } if(state.player.gold < (it.cost||5)){ log('Not enough gold'); return; } state.player.gold -= (it.cost||5); if(it.type==='consumable'){ if(it.baseName==='Potion') state.player.potions=(state.player.potions||0)+1; else if(it.baseName==='Ether') state.player.ethers=(state.player.ethers||0)+1; log(`Bought ${it.baseName}`); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(it); log(`Bought ${it.rarity||''} ${it.name||it.baseName}`); addJournal(`Bought ${it.rarity||''} ${it.name||it.baseName}`); } fullSave(); renderAll(); }
 function closeShopPanel(){ $('shopPanel').innerHTML = `<div class="small">Shop & events appear while exploring.</div>`; renderAll(); }
@@ -451,14 +409,14 @@ function equipmentPoolPreview(){ const pool=[]; Object.keys(WEAPONS).forEach(r=>
 
 /* events */
 const EVENTS = [
-  { id:'whisper_door', text:'A door hums with whispers. Speak or remain silent?', choices:[ {label:'Speak', func:s=>{ s.player.xp=(s.player.xp||0)+5; s.player.hp=Math.max(1,s.player.hp-5); addJournal('You whispered to the Door — a fragment answered.'); applySanityChange(-2,'Whisper Door'); log('+5 XP, -5 HP'); } }, {label:'Silent', func:s=>{ if(rnd()<0.35){ const r=rChoice(Object.values(RELICS).flat()); s.relics.push({name:r.name, rarity:'Common'}); addJournal('Silence rewarded with a relic.'); log(`Silence: ${r.name}`); } else log('Nothing happened'); } } ] },
-  { id:'cursed_fountain', text:'A cursed fountain bubbles. Drink to heal but risk a curse?', choices:[ {label:'Drink', func:s=>{ if(rnd()<0.5){ s.player.hp=Math.min(s.player.maxHp, s.player.hp+12); addJournal('Fountain healed you'); applySanityChange(-1,'Fountain'); log('Healed by fountain'); } else { applyStatus(s.player,'poison',3); applySanityChange(-4,'Cursed Fountain'); addJournal('Fountain cursed you'); log('Poisoned by fountain'); } } }, {label:'Pass', func:s=>{ addJournal('You pass the fountain'); log('Passed fountain'); } } ] }
+  { id:'whisper_door', text:'A door hums with whispers. Speak or remain silent?', choices:[ {label:'Speak', func:s=>{ s.player.xp=(s.player.xp||0)+5; s.player.hp=Math.max(1,s.player.hp-5); addJournal('You whispered to the Door — a fragment answered.'); applySanityChange(-2,'Whisper Door'); nudgeFaction('Void',1,'Speak to whispers'); log('+5 XP, -5 HP'); } }, {label:'Silent', func:s=>{ if(rnd()<0.35){ const r=rChoice(Object.values(RELICS).flat()); s.relics.push({name:r.name, rarity:'Common'}); addJournal('Silence rewarded with a relic.'); nudgeFaction('Order',1,'Silent respect'); log(`Silence: ${r.name}`); } else log('Nothing happened'); } } ] },
+  { id:'cursed_fountain', text:'A cursed fountain bubbles. Drink to heal but risk a curse?', choices:[ {label:'Drink', func:s=>{ if(rnd()<0.5){ s.player.hp=Math.min(s.player.maxHp, s.player.hp+12); addJournal('Fountain healed you'); applySanityChange(-1,'Fountain'); nudgeFaction('Wilds',1,'Drank from wild spring'); log('Healed by fountain'); } else { applyStatus(s.player,'poison',3); applySanityChange(-4,'Cursed Fountain'); nudgeFaction('Void',2,'Cursed drink'); addJournal('Fountain cursed you'); log('Poisoned by fountain'); } } }, {label:'Pass', func:s=>{ addJournal('You pass the fountain'); log('Passed fountain'); } } ] }
 ];
 
 function runEvent(){ if(!state.player) return; const ev=rChoice(EVENTS); log('❓ Event: '+ev.text); let html=`<div class="small">${ev.text}</div><div class="shop-list" style="margin-top:8px">`; ev.choices.forEach((c, idx)=>{ html += `<div class="item-row"><div>${c.label}</div><div><button class="secondary" onclick="chooseEvent(${idx})">Choose</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; window.chooseEvent = function(idx){ ev.choices[idx].func(state); renderAll(); fullSave(); closeShopPanel(); }; }
 
 /* ---------- inventory & equip ---------- */
-function openInventory(){ if(!state.player) return; if(state.inCombat){ log('Finish combat first'); return; } const inv = state.player.inventory || []; let html = `<div class="small">Inventory</div><div class="inv-list">`; if(inv.length===0) html += `<div class="small">— empty —</div>`; inv.forEach((it, idx)=>{ const stats = `${it.effect?(it.effect.atk?`ATK+${it.effect.atk} `:'')+(it.effect.def?`DEF+${it.effect.def} `:''):''}`; html+= `<div class="item-row"><div><strong style="color:${it.color||'#bdbdbd'}">${it.name}</strong><div class="small muted">${it.rarity?it.rarity:''}</div><div class="small muted">${stats}</div></div><div><button class="secondary" onclick="equipItem(${idx})">Equip</button> <button class="secondary" onclick="inspectItem(${idx})">Inspect</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; }
+function openInventory(){ if(!state.player) return; if(state.inCombat){ log('Finish combat first'); return; } const inv = state.player.inventory || []; let html = `<div class="small">Inventory</div><div class="inv-list">`; if(inv.length===0) html += `<div class="small">— empty —</div>`; inv.forEach((it, idx)=>{ const stats = `${it.effect?(it.effect.atk?`ATK+${it.effect.atk} `:'')+(it.effect.def?`DEF+${it.effect.def} `:''):''}`; html+= `<div class="item-row"><div><strong>${it.name}</strong><div class="small muted">${it.rarity?it.rarity:''}</div><div class="small muted">${stats}</div></div><div><button class="secondary" onclick="equipItem(${idx})">Equip</button> <button class="secondary" onclick="inspectItem(${idx})">Inspect</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; }
 
 function equipItem(idx){ const it = state.player.inventory[idx]; if(!it) return; if(!['weapon','armor','accessory'].includes(it.type) && !['weapon','armor'].includes(it.type)){ log('Not equippable'); return; } const slot = (it.type==='weapon')?'weapon':(it.type==='armor'?'armor':'accessory'); if(state.player.equip[slot]){ state.player.inventory.push(state.player.equip[slot]); log(`Unequipped ${state.player.equip[slot].baseName || state.player.equip[slot].name}`); } state.player.equip[slot]=it; state.player.inventory.splice(idx,1); log(`🛡️ Equipped ${it.rarity || ''} ${it.name}`); derivePlayer(); fullSave(); renderAll(); }
 function inspectItem(idx){ const it = state.player.inventory[idx]; if(it) alert(`${it.rarity || 'Common'} ${it.name}\n${it.effect?Object.entries(it.effect).map(e=> `${e[0]}:${e[1]}`).join('\n'):''}\nValue:${it.cost||0}g`); }
@@ -484,7 +442,6 @@ function showFloating(text, cls='hit', absolute=false){
 }
 
 /* ---------- journal & achievements ---------- */
-function addJournal(text){ state.journal = state.journal || []; state.journal.push({time:Date.now(),text}); fullSave(); }
 const ACHIEVEMENTS = [
   {id:'slayer',name:'Monster Slayer',cond:()=> state.stats.kills>=100},
   {id:'collector',name:'Relic Collector',cond:()=> state.stats.relics>=10},
@@ -502,15 +459,14 @@ function onRunEnd(){ const floors = state.player?.floor || 1; const legacy = Mat
 function flavorForRelic(name){ return `An odd relic: ${name}. It hums with forgotten memory.`; }
 
 /* ---------- render UI ---------- */
-function renderRelicsUI(){ const el=$('relicRow'); if(!el) return; el.innerHTML=''; const combined = (state.relics||[]).concat(state.legacyRelics||[]); if(combined.length===0){ el.innerText='Relics: —'; return; } for(const r of combined){ const pill=document.createElement('div'); pill.className='relic-pill'; pill.innerText = `${r.rarity?('['+r.rarity+'] '):''}${r.name}`; pill.style.borderColor = r.color || '#673'; el.appendChild(pill); } }
+function renderRelicsUI(){ const el=$('relicRow'); if(!el) return; el.innerHTML=''; const combined = (state.relics||[]).concat(state.legacyRelics||[]); if(combined.length===0){ el.innerText='Relics: —'; return; } for(const r of combined){ const pill=document.createElement('div'); pill.className='relic-pill'; pill.innerText = `${r.rarity?('['+r.rarity+'] '):''}${r.name}`; el.appendChild(pill); } }
 
 function renderSpellButtons(){ const container=$('spellRow'); if(!container) return; container.innerHTML=''; if(!state.player) return; const spells = state.player.spells||[]; const costMap={'Firebolt':3,'Ice Shard':4,'Heal':4,'Lightning Strike':5,'Shield':3,'Voidstrike':7}; spells.forEach(s=>{ const b=document.createElement('button'); b.className='secondary'; const cost = costMap[s]||3; b.textContent = `${s} (${cost})`; b.onclick=()=>{ castSpell(s); $('spellMenu').classList.add('hidden'); }; container.appendChild(b); }); }
 function renderSkillButtons(){ const container=$('skillRow'); if(!container) return; container.innerHTML=''; if(!state.player) return; const skills = state.player.skills||[]; const classAbility = CLASS_DATA[state.player.classKey].ability; const btn = document.createElement('button'); btn.className='secondary'; btn.textContent = `${classAbility.id}`; btn.onclick = ()=> useSkill(classAbility.id); container.appendChild(btn); skills.forEach(s=>{ const b=document.createElement('button'); b.className='secondary'; b.textContent = s; b.onclick = ()=> useSkill(s); container.appendChild(b); }); }
 
-/* ---------- meta shop ---------- */
-function renderMeta(){ const el=$('metaContent'); if(!el) return; const offers = [ {id:'hp_boost',name:'Vital Essence',cost:6,desc:'+5 Max HP permanently'}, {id:'loot_boost',name:'Lucky Soul',cost:10,desc:'+5% rare drop chance'}, {id:'unlock_class',name:'Blood Oath',cost:12,desc:'Spend to unlock a class for next runs'} ]; let html=`<div class="small">Legacy Points: <strong>${state.meta.legacyPts||0}</strong></div><div style="margin-top:8px">`; offers.forEach((o,idx)=> html += `<div class="item-row"><div><strong>${o.name}</strong><div class="small muted">${o.desc}</div></div><div><button class="secondary" onclick="buyMeta(${idx})">Buy (${o.cost})</button></div></div>`); html+=`</div>`; el.innerHTML = html; }
-function buyMeta(idx){ const offers=[{id:'hp_boost',name:'Vital Essence',cost:6,apply:()=>{ state.meta.upgrades.push('hp_boost'); state.player && (state.player.baseHp += 5); }},{id:'loot_boost',name:'Lucky Soul',cost:10,apply:()=>{ state.meta.upgrades.push('loot_boost'); }},{id:'unlock_class',name:'Blood Oath',cost:12,apply:()=>{ // unlock a random class if any remain
-  const all = Object.keys(CLASS_DATA); const unlocked = state.meta.unlockedClasses || []; const remaining = all.filter(c=>!unlocked.includes(c)); if(remaining.length>0){ const pick = rChoice(remaining); state.meta.unlockedClasses = (state.meta.unlockedClasses||[]).concat(pick); addJournal(`Unlocked class ${pick} for future runs`); } }}]; const o=offers[idx]; if(!o) return; if(state.meta.legacyPts < o.cost){ alert('Not enough Legacy Points'); return; } state.meta.legacyPts -= o.cost; o.apply(); fullSave(); renderMeta(); renderAll(); log('Meta purchased: '+o.name); }
+/* ---------- meta / shrine ---------- */
+function renderMeta(){ const el=$('metaContent'); if(!el) return; const offers = [ {id:'hp_boost',name:'Vital Essence',cost:6,desc:'+5 Max HP permanently'}, {id:'loot_boost',name:'Lucky Soul',cost:10,desc:'+5% rare drop chance'}, {id:'unlock_class',name:'Blood Oath',cost:12,desc:'Unlock a class for future runs'} ]; let html=`<div class="small">Legacy Points: <strong>${state.meta.legacyPts||0}</strong></div><div style="margin-top:8px">`; offers.forEach((o,idx)=> html += `<div class="item-row"><div><strong>${o.name}</strong><div class="small muted">${o.desc}</div></div><div><button class="secondary" onclick="buyMeta(${idx})">Buy (${o.cost})</button></div></div>`); html+=`</div>`; el.innerHTML = html; }
+function buyMeta(idx){ const offers=[{id:'hp_boost',name:'Vital Essence',cost:6,apply:()=>{ state.meta.upgrades.push('hp_boost'); state.player && (state.player.baseHp += 5); }},{id:'loot_boost',name:'Lucky Soul',cost:10,apply:()=>{ state.meta.upgrades.push('loot_boost'); }},{id:'unlock_class',name:'Blood Oath',cost:12,apply:()=>{ const all = Object.keys(CLASS_DATA); const unlocked = state.meta.unlockedClasses || []; const remaining = all.filter(c=>!unlocked.includes(c)); if(remaining.length>0){ const pick = rChoice(remaining); state.meta.unlockedClasses = (state.meta.unlockedClasses||[]).concat(pick); addJournal(`Unlocked class ${pick} for future runs`); } }}]; const o=offers[idx]; if(!o) return; if(state.meta.legacyPts < o.cost){ alert('Not enough Legacy Points'); return; } state.meta.legacyPts -= o.cost; o.apply(); fullSave(); renderMeta(); renderAll(); log('Meta purchased: '+o.name); }
 
 /* ---------- SANITY & DREAMS ---------- */
 function applySanityChange(amount, reason){
@@ -548,7 +504,7 @@ function triggerHallucination(){
   const halluc = [
     ()=>{ addJournal('A shadow reached for you; it left only a cold mark.'); applySanityChange(-2,'Shadow reach'); log('A hallucination scratches at your mind.'); },
     ()=>{ addJournal('You imagined a fellow traveler — then you remembered you travel alone.'); applySanityChange(-3,'Lonely memory'); log('Lonely vision fades.'); },
-    ()=>{ addJournal('You saw coins pouring from the ceiling — they were pebbles.'); const g=rInt(2,6); state.player.gold = (state.player.gold||0)+g; log(`Hallucination: found ${g} gold (illusory?)`); }
+    ()=>{ addJournal('You saw coins pouring from the ceiling — they were pebbles.'); const g=rInt(2,6); state.player.gold = (state.player.gold||0)+g; log(`Hallucination: found ${g} gold`); }
   ];
   rChoice(halluc)();
   renderAll();
@@ -584,7 +540,55 @@ function maybeTriggerDreamAfterFloor(){
   if(rnd() < 0.18 + Math.max(0, (20 - (state.sanity||100))/200) ){ triggerDream(); }
 }
 
-/* integrate rest/shrine */
+/* ---------- Dreamscape Hub (special interactive hub) ---------- */
+function openDreamHub(){ $('dreamHubModal').classList.remove('hidden'); $('dreamHubModal').setAttribute('aria-hidden','false'); }
+function closeDreamHub(){ $('dreamHubModal').classList.add('hidden'); $('dreamHubModal').setAttribute('aria-hidden','true'); renderAll(); }
+function dreamHubMerchant(){
+  // spend sanity for relic offer
+  const cost = 12;
+  if(state.sanity < cost){ alert('You lack the clarity to bargain.'); return; }
+  applySanityChange(-cost, 'Dream Merchant bargain');
+  const tier = rChoice(['Rare','Epic','Legendary']);
+  const relPool = RELICS[tier] || RELICS.Common;
+  const rel = rChoice(relPool);
+  state.relics.push({name:rel.name, rarity:tier});
+  noteLibrary('relic_'+rel.name, rel.name, `Dream relic: ${rel.name}`);
+  addJournal('Dream Merchant grants a relic at a cost of sanity.');
+  log(`Dream Merchant: acquired ${rel.name}`);
+  closeDreamHub();
+}
+function dreamHubFaction(){
+  // view and optionally shift alignment slightly
+  const keys = Object.keys(state.factions);
+  let html = `<div class="small">Factions</div>`;
+  keys.forEach(k=> html += `<div class="item-row"><div><strong>${k}</strong><div class="small muted">${FACTIONS[k].desc}</div></div><div><span class="small muted">${state.factions[k]||0}</span></div></div>`);
+  html += `<div style="margin-top:8px"><button class="secondary" onclick="pledgeFaction('Order')">Pledge Order (-2 Sanity, +2 Favor)</button> <button class="secondary" onclick="pledgeFaction('Void')">Embrace Void (-6 Sanity, +4 Favor)</button> <button class="secondary" onclick="pledgeFaction('Wilds')">Call Wilds (-1 Sanity, +1 Favor)</button></div>`;
+  $('dreamHubBody').innerHTML = html;
+}
+function pledgeFaction(f){
+  const costs = {Order:2,Void:6,Wilds:1};
+  const gains = {Order:2,Void:4,Wilds:1};
+  const cost = costs[f] || 2;
+  if(state.sanity < cost){ alert('You lack the clarity.'); return; }
+  applySanityChange(-cost, `Pledged to ${f}`);
+  nudgeFaction(f, gains[f], 'Pledge in Dreamscape');
+  addJournal(`You pledged to ${f} in the Dreamscape.`);
+  closeDreamHub();
+}
+function dreamHubEcho(){
+  // spend fragments for a choice
+  if((state.meta.fragments||0) < 3){ alert('Need 3 fragments to seek an Echo.'); return; }
+  state.meta.fragments -=3;
+  const opts = [
+    ()=>{ applySanityChange(8,'Echo regained'); addJournal('Echo restored your sanity slightly.'); log('Echo: sanity +8'); },
+    ()=>{ state.meta.legacyPts = (state.meta.legacyPts||0) + 2; addJournal('Echo grants legacy points.'); log('Echo: +2 legacy'); },
+    ()=>{ state.player.baseAtk = (state.player.baseAtk||0) + 1; addJournal('Echo sharpens your blade.'); log('Echo: +1 base ATK'); }
+  ];
+  rChoice(opts)();
+  closeDreamHub();
+}
+
+/* ---------- rest, shrine, town ---------- */
 function useInn(){
   if(state.player.gold < 8){ alert('Not enough gold'); return; }
   state.player.gold -= 8;
@@ -596,11 +600,17 @@ function useInn(){
 }
 function openShrine(){
   const pick = prompt('Shrine: 1) Reroll relic (cost 2g) 2) Respec skills (cost 4g) 3) Meditate (+8 Sanity for 2 fragments)','3');
-  if(pick==='1'){ if(state.player.gold<2){ alert('Not enough gold'); return; } state.player.gold -= 2; if(state.relics.length>0){ const r = state.relics.pop(); const newRel = rChoice(Object.values(RELICS).flat()); state.relics.push({name:newRel.name}); log('Rerolled relic'); } else log('No relic to reroll'); }
+  if(pick==='1'){ if(state.player.gold<2){ alert('Not enough gold'); return; } state.player.gold -= 2; if(state.relics.length>0){ const r = state.relics.pop(); const newRel = rChoice(Object.values(RELICS).flat()); state.relics.push({name:newRel.name}); log('Rerolled relic'); noteLibrary('relic_'+newRel.name, newRel.name, `Shrine relic: ${newRel.name}`); } else log('No relic to reroll'); }
   else if(pick==='2'){ if(state.player.gold<4){ alert('Not enough gold'); return; } state.player.gold -= 4; state.player.skills = []; log('You respec your skills'); }
   else if(pick==='3'){ if((state.meta.fragments||0) < 2){ alert('Not enough fragments'); return; } state.meta.fragments -= 2; applySanityChange(8,'Meditation'); log('Meditation at shrine calms you.'); }
   renderAll(); fullSave();
 }
+
+/* ---------- level UI wiring & spells/skills ---------- */
+function showSkillMenu(){ $('skillMenu').classList.remove('hidden'); renderSkillButtons(); }
+function hideSkillMenu(){ $('skillMenu').classList.add('hidden'); }
+function showSpellMenu(){ $('spellMenu').classList.remove('hidden'); renderSpellButtons(); }
+function hideSpellMenu(){ $('spellMenu').classList.add('hidden'); }
 
 /* ---------- UI wiring ---------- */
 function wireUI(){
@@ -622,17 +632,46 @@ function wireUI(){
   $('btnDaily').addEventListener('click', ()=>{ const seed=generateDailySeedForDate(new Date()); const cls = prompt('Daily run — choose class: Warrior, Mage, Rogue','Warrior'); if(!cls||!CLASS_DATA[cls]){ alert('Invalid'); return; } newRun(cls, seed, true); });
   $('btnCredits').addEventListener('click', ()=>{ $('creditsModal').classList.remove('hidden'); $('creditsModal').setAttribute('aria-hidden','false'); });
   $('closeCredits').addEventListener('click', ()=>{ $('creditsModal').classList.add('hidden'); $('creditsModal').setAttribute('aria-hidden','true'); });
+  $('btnLibrary').addEventListener('click', ()=>{ $('libraryModal').classList.remove('hidden'); $('libraryModal').setAttribute('aria-hidden','false'); renderLibrary(); });
+  $('btnCustomize').addEventListener('click', ()=>{ $('customModal').classList.remove('hidden'); $('customModal').setAttribute('aria-hidden','false'); renderCustomization(); });
+  $('btnDreamHub').addEventListener('click', ()=> openDreamHub());
   window.closeMeta = ()=>{ $('metaModal').classList.add('hidden'); $('metaModal').setAttribute('aria-hidden','true'); };
   window.closeJournal = ()=>{ $('journalModal').classList.add('hidden'); $('journalModal').setAttribute('aria-hidden','true'); };
   window.closeAchievements = ()=>{ $('achievementsModal').classList.add('hidden'); $('achievementsModal').setAttribute('aria-hidden','true'); };
-  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ ['metaModal','journalModal','achievementsModal','creditsModal','dreamModal','levelModal'].forEach(id=>{ const el=$(id); if(el && !el.classList.contains('hidden')){ el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); } }); }});
+  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ ['metaModal','journalModal','achievementsModal','creditsModal','dreamModal','levelModal','dreamHubModal','libraryModal','customModal'].forEach(id=>{ const el=$(id); if(el && !el.classList.contains('hidden')){ el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); } }); }});
 }
 
-/* ---------- render all ---------- */
+/* ---------- Library & Customization ---------- */
+function renderLibrary(){
+  const el = $('libraryContent'); if(!el) return;
+  let html = `<div class="small muted">Library entries record discoveries and lore.</div><div style="margin-top:8px">`;
+  const keys = Object.keys(state.library||{}).sort((a,b)=> (state.library[b].discovered||0) - (state.library[a].discovered||0));
+  if(keys.length===0) html += `<div class="small muted">— Empty —</div>`;
+  keys.forEach(k=>{ const e = state.library[k]; html += `<div style="margin-bottom:10px"><strong>${e.title}</strong><div class="small muted">${new Date(e.discovered).toLocaleString()}</div><div style="margin-top:6px">${e.body}</div></div>`; });
+  html += `</div>`;
+  el.innerHTML = html;
+}
+function renderCustomization(){
+  const el = $('customContent'); if(!el) return;
+  const titles = ['None','The Hollowed','The Eternal Flame','Bearer of Thorns','Seeker of Echoes'];
+  const styles = [{id:'default',label:'Default'},{id:'silver',label:'Silver Text'},{id:'crimson',label:'Crimson'},{id:'shadow',label:'Shadow-Green'}];
+  let html = `<div class="small muted">Choose title and text style.</div><div style="margin-top:8px">`;
+  titles.forEach((t,idx)=> html += `<div class="item-row"><div>${t}</div><div><button class="secondary" onclick="applyTitle('${t}')">Set</button></div></div>`);
+  html += `<div style="margin-top:8px" class="small muted">Styles</div>`;
+  styles.forEach(s=> html += `<div class="item-row"><div>${s.label}</div><div><button class="secondary" onclick="applyStyle('${s.id}')">Apply</button></div></div>`);
+  html += `</div>`;
+  el.innerHTML = html;
+}
+function applyTitle(t){ state.customization.title = t==='None'?null:t; addJournal(`Title set: ${t}`); fullSave(); renderAll(); }
+function applyStyle(id){ state.customization.style = id; addJournal(`Style applied: ${id}`); fullSave(); // apply style via body class
+  document.body.dataset.style = id; renderAll(); }
+
+/* ---------- SANITY hooks in render & save ---------- */
 function renderAll(){
   if(state.player){
     $('playerName').innerText = state.player.name || '—';
     $('playerClass').innerText = state.player.classKey || '—';
+    $('playerTitle').innerText = `Title: ${state.customization.title || '—'}`;
     derivePlayer();
     $('hp').innerText = Math.max(0, state.player.hp||0);
     $('maxhp').innerText = state.player.maxHp||0;
@@ -650,6 +689,7 @@ function renderAll(){
     $('invSummary').innerText = `Potions: ${state.player.potions||0} • Ethers: ${state.player.ethers||0} • Items: ${(state.player.inventory||[]).length}`;
   } else {
     $('playerName').innerText = '—';
+    $('playerTitle').innerText = 'Title: —';
   }
 
   if(state.inCombat && state.currentEnemy){
@@ -661,8 +701,7 @@ function renderAll(){
     $('encounterTitle').innerText = state.currentEnemy.name;
     $('encounterText').innerText = state.currentEnemy.isBoss ? 'Boss battle — focus and survive.' : 'Battle — choose your action.';
     const ba = $('battleArea'); ba.innerHTML = '';
-    const name = document.createElement('div'); name.className = `enemy ${state.currentEnemy.rarity||'Common'}`; name.innerText = `${state.currentEnemy.name}`; name.style.color = state.currentEnemy.color || '#fff';
-    ba.appendChild(name);
+    const name = document.createElement('div'); name.className = `enemy ${state.currentEnemy.rarity||'Common'}`; name.innerText = `${state.currentEnemy.name}`; ba.appendChild(name);
   } else {
     $('combatUI').classList.add('hidden');
     $('encounterTitle').innerText = state.player ? `Floor ${state.player.floor}` : 'Welcome';
@@ -673,13 +712,15 @@ function renderAll(){
   renderRelicsUI();
   renderJournal();
   renderMeta();
-  if($('fragments')) $('fragments').innerText = state.meta.fragments||0;
   if($('seedDisplay')) $('seedDisplay').innerText = state.seed||'—';
   if($('legacyPts')) $('legacyPts').innerText = state.meta.legacyPts||0;
   renderSanityUI();
   checkAchievements();
   fullSave();
 }
+
+/* ---------- journal & render ---------- */
+function renderJournal(){ const el=$('journalContent'); if(!el) return; el.innerHTML=''; const j=state.journal||[]; if(j.length===0) el.innerHTML=`<div class="small muted">— No entries yet —</div>`; j.forEach(entry=>{ const d = new Date(entry.time).toLocaleString(); el.innerHTML += `<div style="margin-bottom:8px"><div class="small muted">${d}</div><div>${entry.text}</div></div>`; }); }
 
 /* ---------- cinematic ---------- */
 function cineShow(text,ms=900){ return new Promise(resolve=>{ const el=document.createElement('div'); el.className='cine-overlay'; el.innerHTML = `<div class="cine-text">${text}</div>`; document.body.appendChild(el); setTimeout(()=>{ el.remove(); resolve(); }, ms); }); }
@@ -699,6 +740,17 @@ function gameInit(seedString, cls){
   if(cls) newRun(cls, state.seed, false);
 }
 window.gameInit = gameInit;
+
+/* convenience: open dream hub */
+window.openDreamHub = openDreamHub;
+window.closeDreamHub = closeDreamHub;
+window.buyMeta = buyMeta;
+window.closeShopPanel = closeShopPanel;
+window.closeJournal = closeJournal;
+window.closeMeta = ()=>{ $('metaModal').classList.add('hidden'); $('metaModal').setAttribute('aria-hidden','true'); };
+window.closeAchievements = ()=>{ $('achievementsModal').classList.add('hidden'); $('achievementsModal').setAttribute('aria-hidden','true'); };
+window.closeLibrary = ()=>{ $('libraryModal').classList.add('hidden'); $('libraryModal').setAttribute('aria-hidden','true'); };
+window.closeCustomize = ()=>{ $('customModal').classList.add('hidden'); $('customModal').setAttribute('aria-hidden','true'); };
 
 /* auto-run if seed in global */
 if(window.INIT_SEED) gameInit(window.INIT_SEED);
