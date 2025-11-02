@@ -3,155 +3,77 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Notebook RPG — Create Character</title>
+  <title>Notebook RPG</title>
   <link rel="stylesheet" href="style.css" />
-  <style>
-    /* small helper to ensure class button visuals (keeps with your style.css) */
-    .classOption { cursor:pointer; user-select:none; }
-    .classOption.selected { box-shadow: 0 0 8px #ffd700 inset; transform: translateY(-2px); }
-  </style>
 </head>
 <body>
-  <!-- Biome background / particles still present for visual continuity -->
+  <!-- Biome background & particle layers -->
   <div id="biomeBackground"></div>
   <div id="particleLayer"></div>
 
-  <!-- Character Creation Panel (inline) -->
-  <div id="characterCreation" class="panel" style="max-width:700px;margin:60px auto;">
-    <h1>📖 The Notebook Opens...</h1>
-    <p>A new story begins. What is your name, traveler?</p>
+  <!-- Character Creation (inline) -->
+  <main id="creationRoot" class="centerWrap">
+    <section id="characterCreation" class="card">
+      <h1 class="title">Create Your Character</h1>
+      <p class="muted">Write your hero into the notebook — choose a name, class, and icon.</p>
 
-    <input id="charName" type="text" placeholder="Enter your name..." maxlength="18" style="width:70%;padding:8px;border-radius:6px;border:1px solid #444;background:#111;color:#fff" />
+      <label class="field">
+        <div class="fieldLabel">Name</div>
+        <input id="charName" class="input" type="text" maxlength="18" placeholder="Arin, Lyra, Kael..." />
+      </label>
 
-    <p style="margin-top:14px">Choose your class:</p>
-    <div id="classList" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;"></div>
+      <div class="field">
+        <div class="fieldLabel">Choose Class</div>
+        <div id="classList" class="classGrid"></div>
+      </div>
 
-    <p style="margin-top:12px">Choose your symbol (optional):</p>
-    <input id="charEmoji" type="text" placeholder="e.g. ⚔️ 🐺 🪄" maxlength="3" style="width:40%;padding:8px;border-radius:6px;border:1px solid #444;background:#111;color:#fff" />
+      <label class="field">
+        <div class="fieldLabel">Symbol (emoji, optional)</div>
+        <input id="charEmoji" class="input" type="text" maxlength="2" placeholder="⚔️ 🐺 🪄" />
+      </label>
 
-    <div style="margin-top:18px">
-      <button id="beginAdventure" style="padding:10px 20px;background:#222;border:2px solid #ffd700;color:#ffd700;border-radius:8px;cursor:pointer">✏️ Begin Adventure</button>
+      <div class="row">
+        <button id="beginAdventure" class="btn primary">Begin Adventure</button>
+        <button id="loadSaveBtn" class="btn">Load Save</button>
+      </div>
+
+      <div id="creationHint" class="muted small" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <!-- Main Game Container (hidden until player exists) -->
+  <main id="gameRoot" class="centerWrap hidden">
+    <section id="gameContainer" class="card wide">
+      <header class="gameHeader">
+        <h1 id="gameTitle">Notebook RPG</h1>
+        <div id="playerBadge" class="badge"></div>
+      </header>
+
+      <div id="gameUI"></div>
+    </section>
+  </main>
+
+  <!-- Floating texts & modal -->
+  <div id="floatLayer" aria-hidden="true"></div>
+  <div id="modalContainer" class="modalRoot" aria-hidden="true"></div>
+
+  <!-- Admin Panel (hidden by default; toggle Ctrl+Shift+A) -->
+  <aside id="adminPanel" class="adminPanel hidden">
+    <h3>Admin</h3>
+    <label class="field">Name <input id="adminName" class="input" /></label>
+    <label class="field">Level <input id="adminLevel" class="input" type="number" /></label>
+    <label class="field">XP <input id="adminXP" class="input" type="number" /></label>
+    <label class="field">HP <input id="adminHP" class="input" type="number" /></label>
+    <label class="field">Aces Value <input id="adminAces" class="input" type="number" /></label>
+    <div class="row">
+      <button id="adminSave" class="btn primary">Save</button>
+      <button id="spawnLoot" class="btn">Spawn Loot</button>
+      <button id="addXP" class="btn">+100 XP</button>
+      <button id="healFull" class="btn">Full Heal</button>
+      <button id="resetGame" class="btn warn">Reset</button>
     </div>
+  </aside>
 
-    <div id="creationNote" class="small" style="margin-top:10px;color:#aaa"></div>
-  </div>
-
-  <!-- Main game container (hidden until created) -->
-  <div id="gameContainer" class="hidden">
-    <h1 id="gameTitle">📘 Notebook RPG</h1>
-    <div id="gameUI"></div>
-  </div>
-
-  <!-- Floating / modals / admin -->
-  <div id="floatLayer"></div>
-  <div id="modalContainer"></div>
-
-  <!-- Admin markup (kept for developer use) -->
-  <div id="adminPanel" class="hidden">
-    <h2>⚙️ Admin Panel</h2>
-    <div id="adminContent">
-      <label>Player Name: <input id="adminName" type="text" /></label>
-      <label>Level: <input id="adminLevel" type="number" /></label>
-      <label>XP: <input id="adminXP" type="number" /></label>
-      <label>HP: <input id="adminHP" type="number" /></label>
-      <label>Ace Currency: <input id="adminAces" type="number" /></label>
-      <button id="adminSave">💾 Save Changes</button>
-      <hr/>
-      <button id="spawnLoot">🎁 Spawn Random Loot</button>
-      <button id="addXP">⚡ Add 100 XP</button>
-      <button id="healFull">❤️ Full Heal</button>
-      <button id="resetGame">💀 Reset Game</button>
-    </div>
-  </div>
-
-<script>
-/*
-  Character creation wiring script
-  - Uses the same class definitions you use in game.js
-  - Writes player object to localStorage key 'notebookSave'
-  - Then reloads page so game.js (which reads notebookSave) loads this player
-*/
-
-const CLASSES = {
-  Knight:    { hp: 120, atk: 10, def: 10, spd: 5, trait: "Extra armor on start" },
-  Rogue:     { hp: 90,  atk: 8,  def: 5,  spd: 12, trait: "Higher crit chance" },
-  Mage:      { hp: 80,  atk: 14, def: 4,  spd: 8,  trait: "Bonus magic damage" },
-  Ranger:    { hp: 100, atk: 10, def: 6,  spd: 10, trait: "High accuracy" },
-  Cleric:    { hp: 95,  atk: 7,  def: 8,  spd: 7,  trait: "Self-heal every 3 turns" },
-  Berserker: { hp: 110, atk: 12, def: 5,  spd: 9,  trait: "More damage at low HP" },
-  Necromancer:{hp:85,  atk: 9,  def:5,  spd:7,  trait: "Can summon skeletons" },
-  Paladin:   { hp:115, atk:10, def:9,  spd:6,  trait: "Light damage resist" }
-};
-
-const classListEl = document.getElementById('classList');
-let selectedClass = null;
-
-// render class buttons
-Object.keys(CLASSES).forEach(cls => {
-  const btn = document.createElement('div');
-  btn.className = 'classOption';
-  btn.textContent = cls;
-  btn.title = CLASSES[cls].trait;
-  btn.style.padding = '8px 12px';
-  btn.style.border = '1px solid #444';
-  btn.style.borderRadius = '8px';
-  btn.style.background = '#111';
-  btn.style.color = '#fff';
-  btn.addEventListener('click', () => {
-    // deselect others
-    document.querySelectorAll('.classOption').forEach(x => x.classList.remove('selected'));
-    btn.classList.add('selected');
-    selectedClass = cls;
-    document.getElementById('creationNote').textContent = `${cls} — ${CLASSES[cls].trait} • HP ${CLASSES[cls].hp}, ATK ${CLASSES[cls].atk}`;
-  });
-  classListEl.appendChild(btn);
-});
-
-// Begin Adventure handler: validate, create save object, store and reload
-document.getElementById('beginAdventure').addEventListener('click', () => {
-  const name = document.getElementById('charName').value.trim();
-  const emoji = document.getElementById('charEmoji').value.trim() || '';
-  if (!name) { alert('Please enter a name.'); return; }
-  if (!selectedClass) { alert('Please select a class.'); return; }
-
-  const def = CLASSES[selectedClass];
-  // Build player object matching game.js expected structure (key names used in the game.js you have)
-  const player = {
-    name,
-    emoji,
-    class: selectedClass,
-    level: 1,
-    xp: 0,
-    nextXP: Math.max(100, Math.floor(120 * Math.pow(1, 1.5))),
-    hp: def.hp,
-    maxHP: def.hp,
-    atk: def.atk,
-    atkBase: def.atk,
-    def: def.def,
-    spd: def.spd,
-    crit: (selectedClass === 'Rogue' ? 13 : 5),
-    aces: { Spades:0, Hearts:0, Diamonds:0, Clubs:0 },
-    inventory: [],
-    equipment: { Weapon:null, Armor:null, Accessory:null },
-    status: []
-  };
-
-  // Save under the key game.js loads from
-  localStorage.setItem('notebookSave', JSON.stringify(player));
-
-  // Small UX: hide creation, show game container (game.js will pick up on reload),
-  // reload so the game script reads the saved player and initializes properly.
-  location.reload();
-});
-
-// quick helper: if a save already exists, skip creation UI and show game container
-(function autoSkipIfSaved(){
-  if (localStorage.getItem('notebookSave')) {
-    // hide creation and show main container, game.js will actually render
-    document.getElementById('characterCreation').classList.add('hidden');
-    document.getElementById('gameContainer').classList.remove('hidden');
-  }
-})();
-</script>
+  <script src="game.js" defer></script>
 </body>
 </html>
