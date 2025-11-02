@@ -11,9 +11,25 @@
   <div id="biomeBackground"></div>
   <div id="particleLayer"></div>
 
+  <!-- 🧾 Character Creation Section -->
+  <div id="characterCreation" class="fadeIn">
+    <h1>📖 The Notebook Opens...</h1>
+    <p>A new story begins. What is your name, traveler?</p>
+
+    <input id="charName" type="text" placeholder="Enter your name..." maxlength="16" />
+
+    <p>Choose your class:</p>
+    <div id="classList"></div>
+
+    <p>Choose your symbol (optional):</p>
+    <input id="charEmoji" type="text" placeholder="e.g. ⚔️ 🧙‍♂️ 🐉" maxlength="3" />
+
+    <button id="beginAdventure">✏️ Begin Adventure</button>
+  </div>
+
   <!-- 🧠 Main Game Container -->
-  <div id="gameContainer">
-    <h1>📘 Notebook RPG</h1>
+  <div id="gameContainer" class="hidden">
+    <h1 id="gameTitle">📘 Notebook RPG</h1>
     <div id="gameUI"></div>
   </div>
 
