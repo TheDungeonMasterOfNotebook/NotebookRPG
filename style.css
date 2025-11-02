@@ -1,19 +1,16 @@
-/* Phase 5: Epic Text RPG — UI polish, sprites integration */
 :root{
-  --bg1:#040105; --bg2:#12060a;
-  --runic:#8a0033; --muted:#9aa3b8; --panel-glass:rgba(255,255,255,0.03);
+  --bg1:#040105; --bg2:#12060a; --runic:#8a0033; --muted:#9aa3b8;
   --accent:#6e1f3a; --rare:#2979ff; --epic:#a020f0; --legend:#ffcc00; --uncommon:#3fa34d;
-  --sprite-size:16px; --sprite-scale:2; /* shows as 32px */
+  --sprite-size:16px; --sprite-scale:2;
+  --monster-cols:4; --monster-rows:4;
 }
 
-/* basic layout */
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#efeef2}
+/* Reset & layout */
+*{box-sizing:border-box} html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#efeef2}
 .wrap{max-width:1100px;margin:10px auto;padding:12px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 h1{margin:0;font-weight:900;color:var(--runic);text-shadow:0 0 12px rgba(138,0,51,0.28)}
 .subtitle{color:var(--muted);font-size:13px}
-.season-badge{font-size:12px;margin-top:4px}
 .layout{display:flex;gap:12px}
 .panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.02);box-shadow:0 12px 40px rgba(0,0,0,0.65)}
 .left{width:330px;min-width:260px}
@@ -24,7 +21,7 @@ h1{margin:0;font-weight:900;color:var(--runic);text-shadow:0 0 12px rgba(138,0,5
 .small{font-size:13px}
 .muted{color:var(--muted)}
 .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.stat{background:var(--panel-glass);padding:10px;border-radius:8px;font-weight:800}
+.stat{background:rgba(255,255,255,0.01);padding:10px;border-radius:8px;font-weight:800}
 .controls{display:flex;flex-wrap:wrap;gap:8px}
 button{background:linear-gradient(180deg,var(--runic), #5a001f); color:white;border:none;padding:10px 12px;border-radius:10px;font-weight:800;cursor:pointer;box-shadow:0 10px 30px rgba(138,0,51,0.08);transition:transform .08s}
 button.secondary{background:#1a2330}
@@ -35,7 +32,7 @@ button:active{transform:translateY(1px)}
 .encounter{padding:10px;border-radius:8px}
 .enemy-name{font-weight:900;color:#ffd7e0;text-shadow:0 0 8px rgba(255,200,210,0.06)}
 .combat-actions{display:flex;gap:8px;flex-wrap:wrap}
-.combat-actions button{flex:1 1 48%}
+.combat-actions button{flex:1 1 30%}
 .spell-menu{margin-top:8px}
 .spell-row{display:flex;gap:8px;flex-wrap:wrap}
 .spell-row button{padding:8px 10px;background:#1e2a2f}
@@ -46,7 +43,6 @@ button:active{transform:translateY(1px)}
 .relic-row{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .relic-pill{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(138,0,51,0.06);font-weight:700;color:#ffdfe6;box-shadow:0 4px 18px rgba(138,0,51,0.06)}
 
-/* item icon (16x16) - scaled */
 .item-icon{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));border-radius:4px;display:inline-block;vertical-align:middle;margin-right:8px;background:#051018;image-rendering:pixelated;overflow:hidden}
 .item-icon img{width:100%;height:100%;display:block;border-radius:4px}
 .item-icon[data-rarity="Common"]{box-shadow:0 0 6px rgba(160,160,160,0.06)}
@@ -55,50 +51,32 @@ button:active{transform:translateY(1px)}
 .item-icon[data-rarity="Epic"]{box-shadow:0 0 10px rgba(162,32,240,0.18)}
 .item-icon[data-rarity="Legendary"]{box-shadow:0 0 12px rgba(255,204,0,0.22)}
 
-/* monster sprite (16x16 scaled) */
-.monster-sprite{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));image-rendering:pixelated;background-image:url('assets/monsters.png');background-repeat:no-repeat;background-size: calc(16 * var(--sprite-scale) * var(--monster-sheet-cols)) calc(16 * var(--sprite-scale) * var(--monster-sheet-rows));display:inline-block;margin-right:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03)}
-/* CSS vars used by script if sheet dims differ */
-:root{ --monster-sheet-cols:4; --monster-sheet-rows:4; }
-
-/* battle area */
+.monster-sprite{width:calc(var(--sprite-size) * var(--sprite-scale));height:calc(var(--sprite-size) * var(--sprite-scale));image-rendering:pixelated;background-image:url('assets/monsters.png');background-repeat:no-repeat;background-size: calc(16 * var(--sprite-scale) * var(--monster-cols)) calc(16 * var(--sprite-scale) * var(--monster-rows));display:inline-block;margin-right:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03)}
 .battle-area{display:flex;align-items:center;gap:12px;margin-bottom:8px}
 
-/* name color by rarity */
 .enemy.Common{color:#bdbdbd}
 .enemy.Uncommon{color:var(--uncommon)}
 .enemy.Rare{color:var(--rare)}
 .enemy.Epic{color:var(--epic)}
 .enemy.Legendary{color:var(--legend)}
 
-/* tooltip */
-.item-cell{display:flex;align-items:center}
 .tooltip{position:absolute;background:#09070a;color:#fff;padding:6px 8px;border-radius:6px;font-size:12px;left:28px;top:-6px;display:none;z-index:40;border:1px solid rgba(255,255,255,0.03)}
 .item-cell:hover .tooltip{display:block}
 
-/* cinematic overlay */
 .cine-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none}
 .cine-overlay.hidden{display:none}
 .cine-text{font-size:20px;color:#ffdfe6;padding:20px;border-radius:8px;text-align:center;opacity:0;transform:scale(0.98);animation: cineIn .9s ease forwards}
 @keyframes cineIn{0%{opacity:0;transform:scale(0.98);filter:blur(4px)}30%{opacity:1;transform:scale(1.02);filter:blur(0)}100%{opacity:1;transform:scale(1);filter:blur(0)}}
-.blood-runic{position:absolute;width:80vmax;height:80vmax;left:50%;top:50%;transform:translate(-50%,-50%) rotate(10deg);opacity:0;pointer-events:none;background:
- radial-gradient(circle at 30% 30%, rgba(138,0,51,0.15), transparent 10%),
- radial-gradient(circle at 70% 70%, rgba(200,20,40,0.08), transparent 12%);
- border-radius:50%;animation: bloodPulse 1.2s ease;}
-@keyframes bloodPulse{0%{opacity:0; transform:translate(-50%,-50%) scale(0.9)}20%{opacity:0.34; transform:translate(-50%,-50%) scale(1.02)}100%{opacity:0}}
 
-/* seed overlay card */
 .seed-overlay{position:fixed;inset:0;background:linear-gradient(180deg,rgba(2,2,5,0.86),rgba(6,6,12,0.9));display:flex;align-items:center;justify-content:center;z-index:400}
 .seed-card{background:linear-gradient(180deg,#081018,#0c080a);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:420px;text-align:center}
-.seed-card h2{color:var(--runic);margin:0 0 8px 0}
-.seed-card input{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01);color:#fff;margin-top:8px}
+.seed-card input, .seed-card select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01);color:#fff;margin-top:8px}
 .seed-controls{display:flex;gap:8px;margin-top:10px;justify-content:center}
 
-/* modal */
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:450;background:rgba(2,2,5,0.6)}
 .modal.hidden{display:none}
 .modal-card{background:linear-gradient(180deg,#081018,#0b0a12);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);width:92%;max-width:520px}
 .modal-body{max-height:55vh;overflow:auto;padding:6px;margin-top:8px}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 
-/* responsive */
 @media (max-width:920px){ .layout{flex-direction:column} .left{width:auto} .combat-actions button{flex-basis:100%} }
