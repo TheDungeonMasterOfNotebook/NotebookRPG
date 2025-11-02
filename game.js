@@ -1,409 +1,806 @@
-/* Phase 7: Full integration (Classes, Statuses, Towns, Achievements, Bosses, Meta)
-   Keep assets in assets/sprites.png and assets/monsters.png
+/* Notebook RPG — Full Stage A + B
+   Features:
+   - Enchantments, merchant, consumables
+   - Aces currency (display-only)
+   - Animated XP & Aces popups, particles
+   - Parallax backgrounds per zone
+   - Enchanted item rune overlays
+   - Status effects (both player & monsters)
+   - Summons / Companions
+   - Daily rewards & streaks
+   - Offline progression (generous: 1h => ~5 battles)
+   - Persistence (localStorage)
 */
+(() => {
+  /* =====================
+     Config & Data
+     ===================== */
+  const SAVE_KEY = "notebookrpg_full_v1";
+  const RARITIES = ["Common","Uncommon","Rare","Super Rare","Epic","Most Def Epic","Powerful","Legendary","Mythic"];
+  const BASE_RARITY_WEIGHTS = {"Common":500,"Uncommon":220,"Rare":120,"Super Rare":60,"Epic":30,"Most Def Epic":10,"Powerful":6,"Legendary":3,"Mythic":1};
+  const MONSTER_TEMPLATES = [{id:"slime",name:"Slime"},{id:"goblin",name:"Goblin"},{id:"wolf",name:"Dire Wolf"},{id:"skeleton",name:"Skeleton"},{id:"mage",name:"Wandering Mage"},{id:"ogre",name:"Ogre"},{id:"wyrm",name:"Wyrm"},{id:"lich",name:"Lich"}];
+  const ZONES = [
+    {name:"Forest",monsterBoost:0, bg:{back:'#082016',mid:'#103027',front:'#163030'}},
+    {name:"Cave",monsterBoost:1, bg:{back:'#101015',mid:'#11131b',front:'#16161a'}},
+    {name:"Ruins",monsterBoost:2, bg:{back:'#1b1417',mid:'#24161a',front:'#2a1f24'}},
+    {name:"Volcano",monsterBoost:3, bg:{back:'#2a0d06',mid:'#3b120a',front:'#5b1d0f'}},
+    {name:"Abyss",monsterBoost:4, bg:{back:'#071024',mid:'#081232',front:'#0b1733'}}
+  ];
+  const MONSTERS_PER_ZONE = 6;
+  const BOSS_EVERY = 10;
+  const ACE_VALUES = {clubs:10, diamonds:25, hearts:50, spades:100};
+  const COMPANION_POOL = [
+    {id:"fire_sprite",name:"Fire Sprite",desc:"Burns enemies (DoT) every 3 turns",trigger:3,ability:"burn",power:6,cost:80},
+    {id:"shield_familiar",name:"Shield Familiar",desc:"Blocks damage every 4 turns",trigger:4,ability:"shield",power:0.25,cost:100},
+    {id:"ace_golem",name:"Ace Golem",desc:"Deals damage scaling with your Aces",trigger:2,ability:"ace_power",power:0,cost:150}
+  ];
+  const STATUS_TYPES = ["Poison","Burn","Freeze","Stun","Bleed","Regen"];
 
-/* ---------- utilities ---------- */
-const $ = id => document.getElementById(id);
-const now = () => (new Date()).toLocaleTimeString();
-function log(msg){ const l = $('log'); if(l) l.innerHTML = `<div>[${now()}] ${msg}</div>` + l.innerHTML; }
-
-/* ---------- RNG & Seed ---------- */
-let RNG_STATE = null;
-function mulberry32(a){ return function(){ let t=a+=0x6D2B79F5; t=Math.imul(t^(t>>>15), t|1); t^=t+Math.imul(t^(t>>>7), t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
-function initSeed(seed){
-  let s=0; for(let i=0;i<seed.length;i++) s=(s*131 + seed.charCodeAt(i))>>>0;
-  if(s===0) s = Date.now() & 0xffffffff;
-  RNG_STATE = mulberry32(s);
-  window.CURRENT_SEED = seed;
-}
-function rnd(){ return RNG_STATE ? RNG_STATE() : Math.random(); }
-function rInt(a,b){ return Math.floor(rnd()*(b-a+1))+a; }
-function rChoice(arr){ return arr[Math.floor(rnd()*arr.length)]; }
-
-/* ---------- persistence keys ---------- */
-const SAVE_KEY = 'epictextrpg_save_v7';
-const META_KEY = 'epictextrpg_meta_v7';
-const LEADER_KEY = 'epictextrpg_leader_v7';
-const DAILY_KEY = 'epictextrpg_daily_v7';
-
-/* ---------- base data ---------- */
-const rarityWeightsBase = { Common:60, Uncommon:25, Rare:10, Epic:4, Legendary:1 };
-function weightedChoice(weights){
-  const total = Object.values(weights).reduce((a,b)=>a+b,0);
-  let roll = rnd() * total;
-  for(const k of Object.keys(weights)){
-    if(roll < weights[k]) return k;
-    roll -= weights[k];
+  /* =====================
+     Utilities
+     ===================== */
+  const randInt = (a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  function chooseWeighted(weights){
+    const entries = Object.entries(weights);
+    const total = entries.reduce((s,[_,w])=>s+w,0); let r = Math.random()*total;
+    for(const [k,w] of entries){ if(r < w) return k; r -= w; } return entries[entries.length-1][0];
   }
-  return Object.keys(weights)[0];
-}
+  function nowMs(){ return Date.now(); }
+  function rarityClass(r){ return r? r.toLowerCase().replace(/\s+/g,'-'):''; }
+  function rollChance(pct){ return Math.random()*100 < pct; }
 
-/* ---------- Classes & skill trees ---------- */
-const CLASS_DATA = {
-  Warrior: {
-    name:'Warrior', passive:'+10% damage', ability:{id:'Power Slash',desc:'Deal 150% damage'}, skills:[
-      {level:2,choices:[{id:'hp+5',label:'+5 HP'},{id:'atk+1',label:'+1 ATK'}]},
-      {level:4,choices:[{id:'shield_bash',label:'Shield Bash (stun)'},{id:'crit+5',label:'+5% Crit'}]}
-    ]
-  },
-  Mage: {
-    name:'Mage', passive:'+2 MP / turn', ability:{id:'Fireball',desc:'Deal 10 fire to enemy'}, skills:[
-      {level:2,choices:[{id:'mp+5',label:'+5 MP'},{id:'mag+1',label:'+1 MAG'}]},
-      {level:4,choices:[{id:'arcane_surge',label:'Arcane Surge (+20% magic dmg)'},{id:'freeze_master',label:'Frost Bolt (chance to freeze)'}]}
-    ]
-  },
-  Rogue: {
-    name:'Rogue', passive:'+10% crit', ability:{id:'Backstab',desc:'Double damage if first strike'}, skills:[
-      {level:2,choices:[{id:'crit+5',label:'+5% Crit'},{id:'atk+1',label:'+1 ATK'}]},
-      {level:4,choices:[{id:'evasion+5',label:'+5% Evasion'},{id:'poison_edge',label:'Poison on hit'}]}
-    ]
+  /* =====================
+     Persistence: load or default state
+     ===================== */
+  function tryLoad(){ try{ const raw = localStorage.getItem(SAVE_KEY); if(!raw) return null; return JSON.parse(raw); } catch(e){ console.warn("Load failed", e); return null; } }
+  const loaded = tryLoad();
+  const state = loaded || {
+    player: { level:1, xp:0, xpToNext: xpForLevel(1), baseMaxHp:120, maxHp:120, hp:120, baseAttack:16, attack:16, crit:5, dodge:3, specialCooldown:0, skillPoints:0, skills:{attack:0,defense:0,luck:0}, _tempBuff:null },
+    equipment:{}, loot:[], currentMonster:null, monsterQueue:[], zoneIndex:0, monstersClearedInZone:0, totalMonstersDefeated:0,
+    aces:{clubs:0,diamonds:0,hearts:0,spades:0}, merchant:{inventory:[]},
+    enchantments:{}, companions:[], companionLibrary:[], statusEffects:{player:[], monster:{}},
+    daily:{lastLogin: null, streak: 0, lastClaim: null}, lastActive: nowMs(), lastSaved: nowMs()
+  };
+
+  /* =====================
+     XP curve
+     ===================== */
+  function xpForLevel(level){ return Math.max(50, Math.floor(120 * Math.pow(level, 1.6))); }
+
+  /* =====================
+     DOM refs
+     ===================== */
+  const refs = {
+    bgBack: document.getElementById("bg-back"),
+    bgMid: document.getElementById("bg-mid"),
+    bgFront: document.getElementById("bg-front"),
+    monsterArea: document.getElementById("monster-area"),
+    monsterQueue: document.getElementById("monster-queue"),
+    lootList: document.getElementById("loot-list"),
+    attackBtn: document.getElementById("attack-btn"),
+    specialBtn: document.getElementById("special-btn"),
+    fleeBtn: document.getElementById("flee-btn"),
+    combatLog: document.getElementById("combat-log"),
+    playerHpFill: document.querySelector("#player-hp .hp-fill"),
+    playerHpSmall: document.getElementById("player-hp-small"),
+    playerAttackValue: document.getElementById("player-attack-value"),
+    playerLevel: document.getElementById("player-level"),
+    playerXpText: document.getElementById("player-xp-text"),
+    playerXpFill: document.querySelector("#player-xp-bar .xp-fill"),
+    levelupBadge: document.getElementById("levelup-badge"),
+    aceClubs: document.getElementById("ace-clubs"),
+    aceDiamonds: document.getElementById("ace-diamonds"),
+    aceHearts: document.getElementById("ace-hearts"),
+    aceSpades: document.getElementById("ace-spades"),
+    aceTotal: document.getElementById("ace-total"),
+    slotWeapon: document.getElementById("slot-Weapon"),
+    slotArmor: document.getElementById("slot-Armor"),
+    slotAccessory: document.getElementById("slot-Accessory"),
+    merchantInventory: document.getElementById("merchant-inventory"),
+    merchantRefresh: document.getElementById("merchant-refresh"),
+    openEnchantBtn: document.getElementById("open-enchant"),
+    enchantModal: document.getElementById("enchant-modal"),
+    enchantTarget: document.getElementById("enchant-target"),
+    enchantOptions: document.getElementById("enchant-options"),
+    enchantConfirm: document.getElementById("enchant-confirm"),
+    enchantCancel: document.getElementById("enchant-cancel"),
+    fxLayer: document.getElementById("fx-layer"),
+    companionsList: document.getElementById("companions-list"),
+    playerStatusList: document.getElementById("player-status-list"),
+    merchantNote: document.getElementById("merchant-note"),
+    dailyModal: document.getElementById("daily-modal"),
+    dailyContent: document.getElementById("daily-content"),
+    dailyClaim: document.getElementById("daily-claim"),
+    recruitBtn: document.getElementById("recruit-companion")
+  };
+
+  /* =====================
+     Parallax background
+     ===================== */
+  function applyZoneBackground(){
+    const zone = ZONES[state.zoneIndex] || ZONES[0];
+    refs.bgBack.style.background = `linear-gradient(180deg, ${shade(zone.bg.back, -6)}, ${zone.bg.mid})`;
+    refs.bgMid.style.background = `linear-gradient(180deg, ${shade(zone.bg.mid, -6)}, ${zone.bg.front})`;
+    refs.bgFront.style.background = `linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))`;
   }
-};
-
-/* ---------- Items / equipment / relics (summary pools) ---------- */
-const WEAPONS = { Common:[{name:'Rusted Sword',sprite:'sword',effect:{atk:1}}], Uncommon:[{name:'Iron Longsword',sprite:'sword',effect:{atk:2}}], Rare:[{name:"Knight's Greatsword",sprite:'sword',effect:{atk:4}}], Epic:[{name:'Bloodfang Blade',sprite:'sword',effect:{atk:5,lifesteal:true}}], Legendary:[{name:'Shadow Reaver',sprite:'sword',effect:{atk:8,doubleStrike:25}}] };
-const ARMOR = { Common:[{name:'Leather Tunic',sprite:'chest',effect:{def:2}}], Uncommon:[{name:'Iron Plate',sprite:'chest',effect:{def:3}}], Rare:[{name:'Knight Shield',sprite:'shield',effect:{def:5}}], Epic:[{name:'Wraith Armor',sprite:'chest',effect:{def:4,poisonImmune:true}}], Legendary:[{name:'Armor of the Fallen King',sprite:'chest',effect:{def:6,atk:3}}] };
-const RELICS = { Common:[{name:'Old Coin',sprite:'coin',effect:{gold:5}}], Uncommon:[{name:'Soul Charm',sprite:'amulet',effect:{xpBoost:10}}], Rare:[{name:'Heart of Cinders',sprite:'orb',effect:{postHeal:5}}], Epic:[{name:'Infernal Sigil',sprite:'orb',effect:{spellBoost:25}}], Legendary:[{name:'Tome of the Void',sprite:'scroll',effect:{unlockSpell:'Voidstrike'}}] };
-
-/* ---------- monsters & bosses ---------- */
-const MONSTERS = {
-  Common:[ {name:'Ratling',sprite:'rat',hp:10,atk:3,def:1,xp:5,gold:3}, {name:'Slime',sprite:'slime',hp:8,atk:2,def:0,xp:4,gold:2} ],
-  Uncommon:[ {name:'Shadow Wolf',sprite:'wolf',hp:18,atk:6,def:2,xp:14,gold:10} ],
-  Rare:[ {name:'Grave Knight',sprite:'knight',hp:35,atk:10,def:4,xp:28,gold:20} ],
-  Epic:[ {name:'Vampire Lord',sprite:'vampire',hp:60,atk:15,def:5,xp:60,gold:45} ],
-  Legendary:[ {name:'The Hollow King',sprite:'hollowking',hp:150,atk:20,def:8,xp:250,gold:120,twoPhase:true} ]
-};
-
-const BOSSES = [
-  { id:'hollowking', name:'The Hollow King', hp:150, phases:[
-      {hpPct:0.7, action:'Summon Shades'}, {hpPct:0.4, action:'Dark Nova'}, {hpPct:0.15, action:'Enrage'}
-    ], drops:['Crown of Eternity','Tome of the Void'], sprite:'hollowking' },
-  { id:'eclipsedragon', name:'Eclipse Dragon', hp:200, phases:[
-      {hpPct:0.75,action:'Shadow Breath'}, {hpPct:0.35,action:'Wings of Night'}
-    ], drops:['Dragon Heart','Shadow Reaver'], sprite:'dragon' }
-];
-
-/* ---------- status effects ---------- */
-const STATUS = {
-  burn: { id:'burn', name:'Burn', tick:(t)=>{ t.currentHp = Math.max(0,t.currentHp - 2); }, desc:'Takes 2 burn damage per turn' },
-  poison: { id:'poison', name:'Poison', tick:(t)=>{ t.currentHp = Math.max(0,t.currentHp - 3); }, desc:'Takes 3 poison damage per turn' },
-  freeze: { id:'freeze', name:'Freeze', skip:true, desc:'Skip next turn' },
-  bless: { id:'bless', name:'Bless', desc:'Temporary buff' },
-  curse: { id:'curse', name:'Curse', desc:'Temporary debuff' }
-};
-
-/* ---------- monster sprite mapping ---------- */
-const monsterSprites = { rat:"0 0", spider:"-16px 0", slime:"-32px 0", goblin:"-48px 0", wolf:"0 -16px", knight:"-48px -16px", vampire:"-48px -32px", hollowking:"0 -48px", dragon:"-16px -48px" };
-
-/* ---------- state ---------- */
-let state = {
-  seed:null, runId:Date.now(), player:null, floorMap:{}, currentEnemy:null, inCombat:false, relics:[], legacyRelics:[], journal:[], meta:{fragments:0,upgrades:[]}, achievements:{}, stats:{kills:0,relics:0,bosses:0,floors:0}, options:{music:false}
-};
-
-/* ---------- helpers: save/load ---------- */
-function showSaveToast(){ const el=$('saveToast'); el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),900); }
-function fullSave(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); localStorage.setItem(META_KEY, JSON.stringify(state.meta)); showSaveToast(); }catch(e){ console.warn('save failed',e); } }
-function fullLoad(){ const s = localStorage.getItem(SAVE_KEY); if(!s) return false; try{ state = JSON.parse(s); state.meta = JSON.parse(localStorage.getItem(META_KEY)||'{}')||state.meta; if(state.seed) initSeed(state.seed); derivePlayer(); renderAll(); log('📂 Save loaded'); return true; }catch(e){ console.warn('load fail', e); return false; } }
-function resetAll(){ if(!confirm('Reset all saves and meta?')) return; localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); state={seed:null,runId:Date.now(),player:null,floorMap:{},currentEnemy:null,inCombat:false,relics:[],legacyRelics:[],journal:[],meta:{fragments:0,upgrades:[]},achievements:{},stats:{kills:0,relics:0,bosses:0,floors:0}}; fullSave(); renderAll(); log('🔁 Reset done'); }
-
-/* ---------- derived & player setup ---------- */
-function applyRelicEffects(){ state.goldMult=1; state.xpMult=1; state.spellBoost=0; for(const r of state.relics.concat(state.legacyRelics||[])){ if(r.name==='Old Coin') state.goldMult+=0.10; if(r.name==='Soul Charm') state.xpMult+=0.10; if(r.name==='Infernal Sigil') state.spellBoost+=0.25; } }
-function derivePlayer(){ if(!state.player) return; applyRelicEffects(); const p=state.player; p.maxHp = p.baseHp + (p.equip.weapon?.effect?.hp||0) + (p.equip.armor?.effect?.hp||0); p.attack = p.baseAtk + (p.equip.weapon?.effect?.atk||0); p.defense = p.baseDef + (p.equip.armor?.effect?.def||0); p.maxMp = Math.max(5, p.mag + 3); if(p.hp>p.maxHp) p.hp=p.maxHp; if(p.mp>p.maxMp) p.mp=p.maxMp; }
-
-/* ---------- new run ---------- */
-function generateDailySeedForDate(d){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); return `${y}${m}${day}`; }
-window.generateDailySeed = ()=> generateDailySeedForDate(new Date());
-
-function newRun(classKey, seed, daily=false){
-  state.seed = seed || String(Date.now());
-  initSeed(state.seed);
-  const CL = CLASS_DATA[classKey] || CLASS_DATA.Warrior;
-  const starterInv = [{ id:'starter_potion', name:'Potion', type:'consumable', sprite:'potion' }];
-  const p = { name:classKey, classKey, baseHp: classKey==='Warrior'?30: classKey==='Mage'?20:24, hp:20, baseAtk: classKey==='Warrior'?7: classKey==='Mage'?3:5, baseDef: classKey==='Warrior'?2:1, mag: classKey==='Mage'?8:4, mp:10, xp:0, level:1, gold:15, potions:1, ethers:1, equip:{weapon:null,armor:null,accessory:null}, inventory: starterInv, spells: classKey==='Mage'?['Firebolt','Ice Shard','Heal'] : (classKey==='Rogue'?['Ice Shard','Firebolt']:['Shield']), skills:[], tempDef:0, status:[], floor:1, daily:!!daily, trophies:[] };
-  state.player = p; derivePlayer(); state.relics=[]; state.currentEnemy=null; state.inCombat=false; state.floorMap={}; if(!daily) cineShow(`Seed ${state.seed} — The descent begins...`,900).then(()=>{ log('New Run: '+classKey); fullSave(); renderAll(); }); if(daily) { log('Daily run started'); fullSave(); renderAll(); }
-}
-
-/* ---------- floor generation & town logic ---------- */
-function genFloor(n){ if(state.floorMap['f'+n]) return state.floorMap['f'+n]; const rooms=[]; const total=6 + Math.min(12,n); for(let i=0;i<total;i++){ const r=rnd(); if(r<0.50) rooms.push({type:'monster'}); else if(r<0.66) rooms.push({type:'treasure'}); else if(r<0.78) rooms.push({type:'event'}); else if(r<0.90) rooms.push({type:'shop'}); else rooms.push({type:'rest'}); } rooms.push({type:'stairs'}); if(n%5===0) rooms.push({type:'boss'}); state.floorMap['f'+n] = {rooms,pointer:0}; return state.floorMap['f'+n]; }
-function enterRoom(){ if(!state.player){ alert('Start a run first'); return; } if(state.inCombat){ log('Finish combat first.'); return; } const floor=state.player.floor||1; const fobj=genFloor(floor); const idx=fobj.pointer; if(idx>=fobj.rooms.length){ // stairs
-  descendFloor(); fullSave(); return;
-} const room=fobj.rooms[idx]; fobj.pointer++; log(`➡ You enter: ${room.type}`); if(room.type==='monster') startMonster(); else if(room.type==='treasure') openChest(); else if(room.type==='shop') openShop(); else if(room.type==='rest') useFountain(); else if(room.type==='event') runEvent(); else if(room.type==='boss') startBoss(); renderAll(); fullSave(); }
-
-/* ---------- descend ---------- */
-function descendFloor(){ if(!state.player) return; state.player.floor = (state.player.floor||1)+1; derivePlayer(); state.player.hp = Math.min(state.player.maxHp, state.player.hp + 10); state.player.mp = Math.min(state.player.maxMp, state.player.mp + 6); state.stats.floors = Math.max(state.stats.floors, state.player.floor); // town after every 3 floors
-  cineShow(`⬇️ Descend to Floor ${state.player.floor}...`,900).then(()=>{ log('Descended to floor '+state.player.floor); if(state.player.floor % 3 === 0) enterTown(); fullSave(); renderAll(); }); }
-
-/* ---------- monster gen & combat ---------- */
-function getAdjustedWeights(floor){ const w=Object.assign({},rarityWeightsBase); if(floor>4){ w.Rare+=5; w.Uncommon-=3; } if(floor>8){ w.Epic+=3; w.Rare+=3; w.Common-=5;} if(floor>14){ w.Legendary+=1; w.Epic+=2; w.Common-=4;} Object.keys(w).forEach(k=>{ if(w[k]<1) w[k]=1; }); return w; }
-function getRandomMonsterForFloor(floor){ const weights=getAdjustedWeights(floor); const rarity=weightedChoice(weights); const pool=MONSTERS[rarity]||MONSTERS.Common; const template=rChoice(pool); const mult = ({Common:1,Uncommon:1.15,Rare:1.3,Epic:1.6,Legendary:2})[rarity]||1; const hp=Math.max(1, Math.round((template.hp||10) + floor*2) * mult); const atk=Math.max(1, Math.round((template.atk||2) + Math.floor(floor/2))); const def=Math.max(0, Math.round((template.def||0) + Math.floor(floor/4))); const xp=Math.max(1, Math.round((template.xp||5)*mult)); const gold=Math.max(0, Math.round((template.gold||3)*mult)); return Object.assign({}, template, {hp,atk,def,xp,gold,rarity}); }
-
-function startMonster(){ const floor=state.player.floor||1; const enemy = getRandomMonsterForFloor(floor); state.currentEnemy = {...enemy, currentHp: enemy.hp, status:[], isBoss:false}; state.inCombat=true; log(`⚔️ ${enemy.rarity} ${enemy.name} appears!`); fullSave(); renderAll(); }
-function startBoss(){ const floor=state.player.floor||1; const tpl = rChoice(BOSSES); const boss = JSON.parse(JSON.stringify(tpl)); boss.currentHp = boss.hp + floor*4; boss.status=[]; boss.isBoss=true; state.currentEnemy = boss; state.inCombat=true; cineShow(`🔥 Boss: ${boss.name} emerges!`,1200).then(()=>{ log('Boss: '+boss.name); fullSave(); renderAll(); }); }
-
-/* ---------- combat actions ---------- */
-function playerAttack(){ if(!state.inCombat || !state.currentEnemy) return; derivePlayer(); const p=state.player; const atk = p.attack || 0; const roll = rInt(1,6); const dmg = Math.max(1, roll + atk - Math.floor((state.currentEnemy.def||0)/2)); state.currentEnemy.currentHp = Math.max(0, state.currentEnemy.currentHp - dmg); showHitText(`-${dmg}`,'hit'); log(`⚔️ You attack for ${dmg}`); if(state.currentEnemy.currentHp<=0) return onVictory(); enemyTurn(); fullSave(); renderAll(); }
-
-function showSkillMenu(){ $('skillMenu').classList.remove('hidden'); renderSkillButtons(); }
-function hideSkillMenu(){ $('skillMenu').classList.add('hidden'); }
-function useSkill(skillId){ if(!state.inCombat || !state.currentEnemy) return; const p=state.player; if(skillId==='Power Slash'){ const dmg=Math.max(1, Math.round(p.attack*1.5)); state.currentEnemy.currentHp=Math.max(0,state.currentEnemy.currentHp-dmg); log(`Power Slash deals ${dmg}`); showHitText(`-${dmg}`,'hit'); } else if(skillId==='Backstab'){ const dmg=Math.max(1,p.attack*2); state.currentEnemy.currentHp=Math.max(0,state.currentEnemy.currentHp-dmg); log(`Backstab deals ${dmg}`); showHitText(`-${dmg}`,'hit'); } else if(skillId==='Fireball'){ const dmg=10 + Math.floor(p.mag/2); state.currentEnemy.currentHp=Math.max(0,state.currentEnemy.currentHp-dmg); log(`Fireball ${dmg}`); showHitText(`-${dmg}`,'fire'); } hideSkillMenu(); if(state.currentEnemy.currentHp<=0) return onVictory(); enemyTurn(); fullSave(); renderAll(); }
-
-function showSpellMenu(){ $('spellMenu').classList.remove('hidden'); renderSpellButtons(); }
-function hideSpellMenu(){ $('spellMenu').classList.add('hidden'); }
-function castSpell(spell){ if(!state.inCombat || !state.currentEnemy) return; const costMap={'Firebolt':3,'Ice Shard':4,'Heal':4,'Lightning Strike':5,'Shield':3,'Voidstrike':7}; const cost = costMap[spell]||3; if(state.player.mp < cost){ log('Not enough MP'); return; } state.player.mp -= cost; if(spell==='Firebolt'){ const d=5 + state.player.floor; state.currentEnemy.currentHp = Math.max(0, state.currentEnemy.currentHp - d); log(`🔥 Firebolt ${d}`); showHitText(`-${d}`,'fire'); } else if(spell==='Ice Shard'){ const d=4 + Math.floor(state.player.mag/3); state.currentEnemy.currentHp=Math.max(0,state.currentEnemy.currentHp-d); if(rnd()<0.25) applyStatus(state.currentEnemy,'freeze',1); log(`❄️ Ice ${d}`); showHitText(`-${d}`,'ice'); } else if(spell==='Heal'){ const h=6 + Math.floor(state.player.mag/3); state.player.hp=Math.min(state.player.maxHp, state.player.hp + h); log(`💚 Healed ${h}`); showHitText(`+${h}`,'heal'); } else if(spell==='Voidstrike'){ const d=12 + Math.floor(state.player.mag/2); state.currentEnemy.currentHp=Math.max(0,state.currentEnemy.currentHp-d); log(`Voidstrike ${d}`); showHitText(`-${d}`,'arcane'); } hideSpellMenu(); if(state.currentEnemy.currentHp<=0) return onVictory(); enemyTurn(); fullSave(); renderAll(); }
-
-function useItemCombat(){ const p=state.player; if(p.potions>0){ p.potions--; const heal=rInt(6,12); p.hp=Math.min(p.maxHp,p.hp+heal); log(`🧴 Potion +${heal}`); showHitText(`+${heal}`,'heal'); } else if(p.ethers>0){ p.ethers--; const m=rInt(4,8); p.mp=Math.min(p.maxMp,p.mp+m); log(`🔮 Ether +${m}`); showHitText(`+${m} MP`,'mp'); } else log('No items'); enemyTurn(); fullSave(); renderAll(); }
-function attemptRun(){ if(!state.inCombat) return; if(rnd()<0.5){ log('🏃 You escape'); state.inCombat=false; state.currentEnemy=null; renderAll(); fullSave(); } else { log('✋ Escape failed'); enemyTurn(); fullSave(); } }
-
-/* ---------- statuses ---------- */
-function applyStatus(target, key, duration=2){ target.status = target.status || []; if(!target.status.find(s=>s.k===key)) target.status.push({k:key,t:duration}); }
-function tickStatus(entity){ if(!entity || !entity.status) return; const rem=[]; for(const s of entity.status){ if(s.k==='burn'){ entity.currentHp = Math.max(0, entity.currentHp - 2); log(`${entity.name} suffers burn`); } if(s.k==='poison'){ entity.currentHp = Math.max(0, entity.currentHp - 3); log(`${entity.name} suffers poison`); } s.t--; if(s.t>0) rem.push(s); } entity.status = rem; }
-
-/* ---------- enemy turn & behaviors ---------- */
-function enemyTurn(){ if(!state.currentEnemy) return; tickStatus(state.currentEnemy); if(state.currentEnemy.currentHp<=0) return onVictory(); const e = state.currentEnemy; const p = state.player; // simple AI with elites and bosses special
-  let dmg = Math.max(1, (e.atk||2) + rInt(-1,1) - (p.defense||0) - (p.tempDef||0));
-  p.tempDef = 0;
-  // boss phase triggers
-  if(e.isBoss && e.phases){
-    for(const ph of e.phases){ if(e.currentHp <= Math.round((ph.hpPct||0)*e.hp) && !ph.triggered){ ph.triggered=true; log(`${e.name} uses ${ph.action}!`); if(ph.action.includes('Summon')){ // spawn adds (simple)
-      log('Shades join the battle!'); } if(ph.action.includes('Enrage')){ e.atk += 4; } } }
+  function shade(hex, amt){
+    try {
+      const c = hex.replace('#',''); const num = parseInt(c,16);
+      let r=(num>>16)+amt, g=((num>>8)&0x00FF)+amt, b=(num&0x0000FF)+amt;
+      r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
+      return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0');
+    } catch(e){ return hex; }
   }
-  p.hp = Math.max(0, p.hp - dmg);
-  showHitText(`-${dmg}`,'hurt'); log(`💥 ${e.name} hits for ${dmg}`);
-  tickStatus(p);
-  if(p.hp<=0){ log('💀 You died. Run ends.'); onRunEnd(); }
-}
+  document.addEventListener("mousemove",(ev)=>{
+    const cx = window.innerWidth/2, cy = window.innerHeight/2;
+    const dx = (ev.clientX - cx)/cx, dy = (ev.clientY - cy)/cy;
+    refs.bgBack.style.transform = `translate3d(${dx*8}px,${dy*8}px,0) scale(1.12)`;
+    refs.bgMid.style.transform = `translate3d(${dx*16}px,${dy*12}px,0) scale(1.08)`;
+    refs.bgFront.style.transform = `translate3d(${dx*28}px,${dy*18}px,0) scale(1.03)`;
+  });
 
-/* ---------- victory & drops ---------- */
-function onVictory(){ const e=state.currentEnemy; const isBoss=!!e && !!e.isBoss; const goldGain = Math.max(1, Math.round(((e.gold||5) + (state.player.floor||1)*2) * (state.goldMult||1))); state.player.gold = (state.player.gold||0) + goldGain; log(`🏆 Defeated ${e.name}! +${goldGain} gold.`); state.stats.kills = (state.stats.kills||0) + 1; if(isBoss) state.stats.bosses = (state.stats.bosses||0) + 1; // loot
-  const drop = generateLootForEnemy(e.rarity || 'Common', state.player.floor || 1);
-  if(drop){ if(drop.type==='relic'){ state.relics.push({name:drop.name}); state.stats.relics++; log(`🎁 Relic: ${drop.name}`); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Item: ${drop.rarity} ${drop.name}`); } } else { if(rnd()<0.25){ state.player.potions=(state.player.potions||0)+1; log('🧴 Found a potion'); } }
-  const xpGain = Math.max(1, Math.round((e.xp||5) * ({Common:1,Uncommon:1.25,Rare:1.5,Epic:2,Legendary:3})[e.rarity||'Common'])); state.player.xp = (state.player.xp||0) + xpGain; checkLevel(); state.currentEnemy=null; state.inCombat=false; derivePlayer(); fullSave(); renderAll(); }
-
-/* ---------- loot generation ---------- */
-const rarityOrder = ['Common','Uncommon','Rare','Epic','Legendary'];
-function weightedRarityRoll(baseRarity,bias=0){
-  const idx = Math.max(0, rarityOrder.indexOf(baseRarity||'Common'));
-  const weights={}; for(let i=0;i<rarityOrder.length;i++){ const dist = i-idx; let w=0; if(dist<=0) w = 50 - (Math.abs(dist)*12); else w = Math.max(1, 6 - dist*2); if(bias>0 && i>=idx) w += bias*(i-idx+1); weights[rarityOrder[i]] = Math.max(1,w); } return weightedChoice(weights);
-}
-function generateLootForEnemy(enemyRarity,floor){
-  const categories=['weapon','armor','relic']; const category=rChoice(categories); const bias=Math.floor(Math.max(0,floor/6)); const chosenRarity = weightedRarityRoll(enemyRarity,bias);
-  let pool = []; if(category==='weapon') pool = WEAPONS[chosenRarity]||WEAPONS.Common; else if(category==='armor') pool = ARMOR[chosenRarity]||ARMOR.Common; else pool = RELICS[chosenRarity]||RELICS.Common; const item = rChoice(pool); if(!item) return null; return Object.assign({type:category,rarity:chosenRarity},item);
-}
-
-/* ---------- leveling & skills ---------- */
-function checkLevel(){ const p=state.player; if(!p) return; const xpTo = 8 + p.level * 6; while(p.xp >= xpTo){ p.xp -= xpTo; p.level++; log(`⬆️ Level ${p.level}`); // present two choices (via prompt for simplicity)
-    const choices = CLASS_DATA[p.classKey].skills.find(s=>s.level===p.level);
-    if(choices){ const a=choices.choices[0], b=choices.choices[1]; const pick = prompt(`Level ${p.level}! Choose:\n1) ${a.label}\n2) ${b.label}`,'1'); const sel = pick==='2'?b:a; // apply
-      applySkillChoice(p, sel); log(`Skill acquired: ${sel.label}`); } derivePlayer(); fullSave(); } }
-
-function applySkillChoice(player, choice){
-  if(!choice) return;
-  if(choice.id==='hp+5') player.baseHp += 5;
-  if(choice.id==='atk+1') player.baseAtk += 1;
-  if(choice.id==='crit+5') player.crit = (player.crit||0) + 5;
-  if(choice.id==='mp+5') player.mp +=5;
-  if(choice.id==='mag+1') player.mag +=1;
-  if(choice.id==='shield_bash') player.skills = (player.skills||[]).concat('Shield Bash');
-  if(choice.id==='arcane_surge') player.spellBoost = (player.spellBoost||0) + 0.20;
-  if(choice.id==='poison_edge') player.poisonOnHit = true;
-}
-
-/* ---------- chest / shop / events / town ---------- */
-function openChest(){ if(!state.player) return; if(rnd() < 0.55){ const drop = generateLootForEnemy('Common', state.player.floor||1); if(drop.type==='relic'){ state.relics.push({name:drop.name}); state.stats.relics++; log(`🎁 Chest: Relic ${drop.name}`); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(drop); log(`🎁 Chest: Item ${drop.rarity} ${drop.name}`); } } else { const g = rInt(6,26) + (state.player.floor||1)*2; state.player.gold = (state.player.gold||0) + Math.round(g * (state.goldMult||1)); log(`💰 Chest: +${Math.round(g * (state.goldMult||1))} gold.`); } fullSave(); renderAll(); }
-
-let lastShop = [];
-function openShop(){ if(state.inCombat){ log('Cannot shop during combat'); return; } const pool = equipmentPoolPreview(); lastShop = []; for(let i=0;i<3;i++) lastShop.push(rChoice(pool)); lastShop.push({ baseName:'Potion', type:'consumable', nameHtml:'Potion', cost:5, heal:8, sprite:'potion'}); lastShop.push({ baseName:'Ether', type:'consumable', nameHtml:'Ether', cost:5, mana:6, sprite:'potion'}); let html = `<div class="small">Merchant's Wares</div><div class="shop-list" style="margin-top:8px">`; lastShop.forEach((it,idx)=>{ const icon = getItemIcon(it); html += `<div class="item-row"><div class="item-cell"><span class="item-icon" data-rarity="${it.rarity||'Common'}"><img src="${icon}" alt="${it.baseName||it.name}" /></span><div>${it.nameHtml || it.baseName || it.name}${it.rarity?` <span class="small muted">(${it.rarity})</span>`:''}</div><div class="tooltip small muted">Cost: ${it.cost || 0}g</div></div><div><span class="small">${it.cost||5}g</span> <button class="secondary" onclick="buy(${idx})">Buy</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; log('🏪 Merchant appears'); fullSave(); }
-
-function buy(idx){ const it = lastShop[idx]; if(!it) return; if(!state.player){ log('Start run first'); return; } if(state.player.gold < (it.cost||5)){ log('Not enough gold'); return; } state.player.gold -= (it.cost||5); if(it.type==='consumable'){ if(it.baseName==='Potion') state.player.potions=(state.player.potions||0)+1; else if(it.baseName==='Ether') state.player.ethers=(state.player.ethers||0)+1; log(`Bought ${it.baseName}`); } else { state.player.inventory = state.player.inventory||[]; state.player.inventory.push(it); log(`Bought ${it.rarity||''} ${it.baseName||it.name}`); } fullSave(); renderAll(); }
-function closeShopPanel(){ $('shopPanel').innerHTML = `<div class="small">Shop & events appear while exploring.</div>`; renderAll(); }
-
-function equipmentPoolPreview(){ const pool=[]; Object.keys(WEAPONS).forEach(r=> WEAPONS[r].forEach(i=> pool.push(Object.assign({rarity:r,type:'weapon'}, i)))); Object.keys(ARMOR).forEach(r=> ARMOR[r].forEach(i=> pool.push(Object.assign({rarity:r,type:'armor'}, i)))); return pool; }
-
-/* events (short set) */
-const EVENTS = [
-  { id:'whisper_door', text:'A door hums with whispers. Speak your name or remain silent?', choices:[ {label:'Speak', func:s=>{ s.player.xp=(s.player.xp||0)+5; s.player.hp=Math.max(1,s.player.hp-5); addJournal('You whispered to the Door — a fragment answered.'); log('+5 XP, -5 HP'); } }, {label:'Silent', func:s=>{ if(rnd()<0.35){ const r=rChoice(Object.values(RELICS).flat()); s.relics.push({name:r.name}); addJournal('Silence rewarded with a relic.'); log(`Silence: ${r.name}`); } else log('Nothing happened'); } } ] },
-  { id:'cursed_fountain', text:'A cursed fountain bubbles. Drink to heal but risk a curse?', choices:[ {label:'Drink', func:s=>{ if(rnd()<0.5){ s.player.hp=Math.min(maxHpLocal(), s.player.hp+12); addJournal('Fountain healed you'); log('Healed by fountain'); } else { applyStatus(s.player,'poison',3); addJournal('Fountain cursed you'); log('Poisoned by fountain'); } } }, {label:'Pass', func:s=>{ addJournal('You pass the fountain'); log('Passed fountain'); } } ] }
-];
-
-function runEvent(){ if(!state.player) return; const ev=rChoice(EVENTS); log('❓ Event: '+ev.text); let html=`<div class="small">${ev.text}</div><div class="shop-list" style="margin-top:8px">`; ev.choices.forEach((c, idx)=>{ html += `<div class="item-row"><div>${c.label}</div><div><button class="secondary" onclick="chooseEvent(${idx})">Choose</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; window.chooseEvent = function(idx){ ev.choices[idx].func(state); renderAll(); fullSave(); closeShopPanel(); }; }
-
-/* ---------- inventory & equip ---------- */
-function openInventory(){ if(!state.player) return; if(state.inCombat){ log('Finish combat first'); return; } const inv = state.player.inventory || []; let html = `<div class="small">Inventory</div><div class="inv-list">`; if(inv.length===0) html += `<div class="small">— empty —</div>`; inv.forEach((it, idx)=>{ const stats = `${it.effect?(it.effect.atk?`ATK+${it.effect.atk} `:'')+(it.effect.def?`DEF+${it.effect.def} `:''):''}`; const icon = getItemIcon(it); html+= `<div class="item-row"><div class="item-cell"><span class="item-icon" data-rarity="${it.rarity||'Common'}"><img src="${icon}" alt="${it.baseName||it.name}" /></span><div>${it.nameHtml || it.baseName || it.name}<div class="small muted">${stats}</div></div><div class="tooltip small muted">Equip / Inspect</div></div><div><button class="secondary" onclick="equipItem(${idx})">Equip</button> <button class="secondary" onclick="inspectItem(${idx})">Inspect</button></div></div>`; }); html += `</div><div style="margin-top:8px"><button class="secondary" onclick="closeShopPanel()">Close</button></div>`; $('shopPanel').innerHTML = html; }
-
-function equipItem(idx){ const it = state.player.inventory[idx]; if(!it) return; if(!['weapon','armor','accessory'].includes(it.type) && !['weapon','armor'].includes(it.type)){ log('Not equippable'); return; } const slot = (it.type==='weapon')?'weapon':(it.type==='armor'?'armor':'accessory'); if(state.player.equip[slot]){ state.player.inventory.push(state.player.equip[slot]); log(`Unequipped ${state.player.equip[slot].baseName || state.player.equip[slot].name}`); } state.player.equip[slot]=it; state.player.inventory.splice(idx,1); log(`🛡️ Equipped ${it.rarity || ''} ${it.baseName || it.name}`); derivePlayer(); fullSave(); renderAll(); }
-function inspectItem(idx){ const it = state.player.inventory[idx]; if(it) alert(`${it.rarity || 'Common'} ${it.baseName || it.name}\n${it.effect?Object.entries(it.effect).map(e=> `${e[0]}:${e[1]}`).join('\n'):''}\nValue:${it.cost||0}g`); }
-
-/* ---------- helpers ---------- */
-function maxHpLocal(){ return (state.player?.baseHp||0) + (state.player?.equip?.armor?.effect?.hp||0) + (state.player?.equip?.accessory?.effect?.hp||0); }
-function totalDefLocal(){ return (state.player?.baseDef||0) + (state.player?.equip?.armor?.effect?.def||0); }
-
-/* ---------- icon rendering small (dataURL placeholders) ---------- */
-const ICON_CACHE = {};
-function renderSpriteToDataURL(name, scale=3){
-  // Very small procedural placeholders (fallback)
-  const canvas = document.createElement('canvas'); canvas.width=8*scale; canvas.height=8*scale;
-  const ctx = canvas.getContext('2d'); ctx.fillStyle='#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = '#8a0033'; ctx.fillRect(1*scale,1*scale,6*scale,6*scale);
-  ctx.fillStyle='#fff'; ctx.fillText(name[0]||'?',2*scale,5*scale);
-  return canvas.toDataURL();
-}
-function getItemIcon(item){
-  const key = item.id || item.baseName || item.name || JSON.stringify(item);
-  if(ICON_CACHE[key]) return ICON_CACHE[key];
-  const spriteName = item.sprite || 'potion';
-  const url = renderSpriteToDataURL(spriteName,3);
-  ICON_CACHE[key] = url;
-  return url;
-}
-
-/* ---------- monster sprite element ---------- */
-function createMonsterSpriteEl(spriteKey){
-  const el = document.createElement('div'); el.className='monster-sprite';
-  const pos = monsterSprites[spriteKey] || '0 0'; el.style.backgroundPosition = pos;
-  return el;
-}
-
-/* ---------- UI render ---------- */
-function renderRelicsUI(){ const el=$('relicRow'); if(!el) return; el.innerHTML=''; const combined = (state.relics||[]).concat(state.legacyRelics||[]); if(combined.length===0){ el.innerText='Relics: —'; return; } for(const r of combined){ const pill=document.createElement('div'); pill.className='relic-pill'; pill.innerText = (r.name||r.id); el.appendChild(pill); } }
-
-function renderJournal(){ const el=$('journalContent'); if(!el) return; el.innerHTML=''; const j=state.journal||[]; if(j.length===0) el.innerHTML=`<div class="small muted">— No entries yet —</div>`; j.forEach(entry=>{ const d = new Date(entry.time).toLocaleString(); el.innerHTML += `<div style="margin-bottom:8px"><div class="small muted">${d}</div><div>${entry.text}</div></div>`; }); }
-
-function addJournal(text){ state.journal = state.journal || []; state.journal.push({time:Date.now(),text}); fullSave(); }
-
-function renderMeta(){ const el=$('metaContent'); if(!el) return; const offers = [ {id:'hp_boost',name:'Vital Essence',cost:6,desc:'+5 Max HP permanently'}, {id:'loot_boost',name:'Lucky Soul',cost:10,desc:'+5% rare drop chance'} ]; let html=`<div class="small">Fragments: <strong>${state.meta.fragments||0}</strong></div><div style="margin-top:8px">`; offers.forEach((o,idx)=> html += `<div class="item-row"><div><strong>${o.name}</strong><div class="small muted">${o.desc}</div></div><div><button class="secondary" onclick="buyMeta(${idx})">Buy (${o.cost})</button></div></div>`); html+=`</div>`; el.innerHTML = html; }
-
-function buyMeta(idx){ const offers=[{id:'hp_boost',name:'Vital Essence',cost:6,apply:()=>{ state.meta.upgrades.push('hp_boost'); state.player && (state.player.baseHp += 5); }},{id:'loot_boost',name:'Lucky Soul',cost:10,apply:()=>{ state.meta.upgrades.push('loot_boost'); /* store effect for loot gen usage */ }}]; const o=offers[idx]; if(!o) return; if(state.meta.fragments < o.cost){ alert('Not enough fragments'); return; } state.meta.fragments -= o.cost; o.apply(); fullSave(); renderMeta(); renderAll(); log('Meta purchased: '+o.name); }
-
-/* ---------- town ---------- */
-function enterTown(){ $('townModal').classList.remove('hidden'); $('townModal').setAttribute('aria-hidden','false'); const html = `<div class="small">You enter The Hollow Village — a safe respite.</div><div style="margin-top:8px"><div class="item-row"><div><strong>Inn</strong><div class="small muted">Heal fully for 8g</div></div><div><button class="secondary" onclick="useInn()">Rest (8g)</button></div></div><div class="item-row"><div><strong>Shop</strong><div class="small muted">Buy gear & consumables</div></div><div><button class="secondary" onclick="openShop()">Visit</button></div></div><div class="item-row"><div><strong>Forge</strong><div class="small muted">Upgrade equipment (1 upgrade per visit)</div></div><div><button class="secondary" onclick="openForge()">Forge</button></div></div><div class="item-row"><div><strong>Shrine</strong><div class="small muted">Reroll a relic or respec class</div></div><div><button class="secondary" onclick="openShrine()">Shrine</button></div></div></div>`; $('townContent').innerHTML = html; }
-
-function useInn(){ if(state.player.gold < 8){ alert('Not enough gold'); return; } state.player.gold -= 8; state.player.hp = state.player.maxHp; state.player.mp = state.player.maxMp; log('You rest at the inn — fully healed'); renderAll(); fullSave(); }
-function openForge(){ // simple: improve random equipped weapon if present
-  if(!state.player.equip.weapon){ alert('Equip a weapon to upgrade'); return; } state.player.equip.weapon.effect.atk = (state.player.equip.weapon.effect.atk||0) + 1; log('Forged weapon: +1 ATK'); renderAll(); fullSave(); }
-function openShrine(){ const pick = prompt('Shrine: 1) Reroll relic (cost 2g) 2) Respec skills (cost 4g)','1'); if(pick==='1'){ if(state.player.gold<2){ alert('Not enough gold'); return; } state.player.gold -= 2; if(state.relics.length>0){ const r = state.relics.pop(); const newRel = rChoice(Object.values(RELICS).flat()); state.relics.push({name:newRel.name}); log('Rerolled relic'); } else log('No relic to reroll'); } else if(pick==='2'){ if(state.player.gold<4){ alert('Not enough gold'); return; } state.player.gold -= 4; state.player.skills = []; log('You respec your skills'); } renderAll(); fullSave(); }
-
-/* ---------- achievements ---------- */
-const ACHIEVEMENTS = [
-  {id:'slayer',name:'Monster Slayer',cond:()=> state.stats.kills>=100},
-  {id:'collector',name:'Relic Collector',cond:()=> state.stats.relics>=10},
-  {id:'deep',name:'Deep Delver',cond:()=> state.stats.floors>=10},
-  {id:'bosskiller',name:'Boss Killer',cond:()=> state.stats.bosses>=1}
-];
-function checkAchievements(){ ACHIEVEMENTS.forEach(a=>{ if(a.cond() && !state.achievements[a.id]){ state.achievements[a.id]=true; showAchievement(a.name); fullSave(); } }); }
-function showAchievement(name){ alert(`🏆 Achievement Unlocked: ${name}`); log(`Achievement: ${name}`); }
-function renderAchievements(){ const el=$('achContent'); if(!el) return; let html=''; ACHIEVEMENTS.forEach(a=> html+=`<div class="item-row"><div><strong>${a.name}</strong></div><div>${state.achievements[a.id] ? '<span class="small muted">Unlocked</span>' : '<span class="small muted">Locked</span>'}</div></div>`); el.innerHTML = html; }
-
-/* ---------- end run & record ---------- */
-function onRunEnd(){ const floors = state.player?.floor || 1; const fragments = Math.max(1,Math.floor(floors/2)); state.meta.fragments = (state.meta.fragments||0) + fragments; const entry = {floor:floors,gold:state.player?.gold||0,class:state.player?.classKey||'Unknown',seed:state.seed}; const lb = JSON.parse(localStorage.getItem(LEADER_KEY)||'[]'); lb.push(entry); localStorage.setItem(LEADER_KEY, JSON.stringify(lb)); state.player=null; state.floorMap={}; state.currentEnemy=null; state.inCombat=false; log(`Run ended. Fragments earned: ${fragments}`); fullSave(); renderAll(); }
-
-/* ---------- float text ---------- */
-function showHitText(text, cls='hit'){ const area=$('battleArea'); const el=document.createElement('div'); el.className=`floating ${cls}`; el.innerText=text; el.style.position='relative'; area.appendChild(el); setTimeout(()=>el.remove(),900); }
-
-/* ---------- UI bindings ---------- */
-function renderSpellButtons(){ const container=$('spellRow'); if(!container) return; container.innerHTML=''; if(!state.player) return; const spells = state.player.spells||[]; const costMap={'Firebolt':3,'Ice Shard':4,'Heal':4,'Lightning Strike':5,'Shield':3,'Voidstrike':7}; spells.forEach(s=>{ const b=document.createElement('button'); b.className='secondary'; const cost = costMap[s]||3; b.textContent = `${s} (${cost})`; b.onclick=()=>{ castSpell(s); $('spellMenu').classList.add('hidden'); }; container.appendChild(b); }); }
-function renderSkillButtons(){ const container=$('skillRow'); if(!container) return; container.innerHTML=''; if(!state.player) return; const skills = state.player.skills||[]; // player's acquired skills
-  const classAbility = CLASS_DATA[state.player.classKey].ability; const btn = document.createElement('button'); btn.className='secondary'; btn.textContent = `${classAbility.id}`; btn.onclick = ()=> useSkill(classAbility.id); container.appendChild(btn); skills.forEach(s=>{ const b=document.createElement('button'); b.className='secondary'; b.textContent = s; b.onclick = ()=> useSkill(s); container.appendChild(b); }); }
-
-/* ---------- UI wiring ---------- */
-function wireUI(){
-  $('btnNew').addEventListener('click', ()=>{ const cls = prompt('New run — choose class: Warrior, Mage, Rogue','Warrior'); if(!cls || !CLASS_DATA[cls]){ alert('Invalid'); return; } const s = prompt('Enter seed (or leave blank for random)',''); const seed = s||String(Math.floor(Math.random()*900000+100000)); newRun(cls, seed, false); });
-  $('btnReset').addEventListener('click', resetAll);
-  $('btnEnterRoom').addEventListener('click', enterRoom);
-  $('btnShop').addEventListener('click', openShop);
-  $('btnRest').addEventListener('click', ()=>{ if(!state.player){ alert('Start run first'); return; } if(state.player.gold < 5){ log('Not enough gold to rest'); return; } state.player.gold -= 5; state.player.hp = Math.min(state.player.maxHp, state.player.hp + 12); state.player.mp = Math.min(state.player.maxMp, state.player.mp + 6); log('You rest (5g)'); renderAll(); fullSave(); });
-  $('btnInventory').addEventListener('click', openInventory);
-  $('btnJournal').addEventListener('click', ()=>{ $('journalModal').classList.remove('hidden'); $('journalModal').setAttribute('aria-hidden','false'); renderJournal(); });
-  $('btnAchievements').addEventListener('click', ()=>{ $('achievementsModal').classList.remove('hidden'); $('achievementsModal').setAttribute('aria-hidden','false'); renderAchievements(); });
-  $('btnExport').addEventListener('click', ()=>{ const txt=$('log').innerText; const blob=new Blob([txt],{type:'text/plain'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`epic_log_${Date.now()}.txt`; a.click(); URL.revokeObjectURL(url); });
-  $('btnAttack').addEventListener('click', playerAttack);
-  $('btnSkill').addEventListener('click', ()=>{ $('skillMenu').classList.toggle('hidden'); renderSkillButtons(); });
-  $('btnSpell').addEventListener('click', ()=>{ $('spellMenu').classList.toggle('hidden'); renderSpellButtons(); });
-  $('btnItem').addEventListener('click', useItemCombat);
-  $('btnRun').addEventListener('click', ()=>{ if(confirm('Attempt to flee?')) attemptRun(); });
-  $('btnSkillBack').addEventListener('click', ()=> $('skillMenu').classList.add('hidden'));
-  $('btnSpellBack').addEventListener('click', ()=> $('spellMenu').classList.add('hidden'));
-  $('btnMeta').addEventListener('click', ()=>{ $('metaModal').classList.remove('hidden'); $('metaModal').setAttribute('aria-hidden','false'); renderMeta(); });
-  $('btnDaily').addEventListener('click', ()=>{ const seed=generateDailySeedForDate(new Date()); const cls = prompt('Daily run — choose class: Warrior, Mage, Rogue','Warrior'); if(!cls||!CLASS_DATA[cls]){ alert('Invalid'); return; } newRun(cls, seed, true); });
-  $('btnCredits').addEventListener('click', ()=>{ $('creditsModal').classList.remove('hidden'); $('creditsModal').setAttribute('aria-hidden','false'); });
-  $('closeCredits').addEventListener('click', ()=>{ $('creditsModal').classList.add('hidden'); $('creditsModal').setAttribute('aria-hidden','true'); });
-  $('btnCopySeed')?.addEventListener('click', ()=>{ navigator.clipboard.writeText(location.href.split('?')[0] + '?seed=' + encodeURIComponent(state.seed)).then(()=> alert('Seed link copied')); });
-  window.closeMeta = ()=>{ $('metaModal').classList.add('hidden'); $('metaModal').setAttribute('aria-hidden','true'); };
-  window.closeJournal = ()=>{ $('journalModal').classList.add('hidden'); $('journalModal').setAttribute('aria-hidden','true'); };
-  window.closeAchievements = ()=>{ $('achievementsModal').classList.add('hidden'); $('achievementsModal').setAttribute('aria-hidden','true'); };
-  $('btnLeaveTown').addEventListener('click', ()=>{ $('townModal').classList.add('hidden'); $('townModal').setAttribute('aria-hidden','true'); renderAll(); });
-  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ ['metaModal','journalModal','achievementsModal','creditsModal','townModal'].forEach(id=>{ const el=$(id); if(el && !el.classList.contains('hidden')){ el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); } }); }});
-}
-
-/* ---------- render all ---------- */
-function renderAll(){
-  if(state.player){
-    $('playerName').innerText = state.player.name || '—';
-    $('playerClass').innerText = state.player.classKey || '—';
-    derivePlayer();
-    $('hp').innerText = Math.max(0, state.player.hp||0);
-    $('maxhp').innerText = state.player.maxHp||0;
-    $('mp').innerText = state.player.mp||0;
-    $('maxmp').innerText = state.player.maxMp||0;
-    $('atk').innerText = state.player.attack||0;
-    $('def').innerText = totalDefLocal();
-    $('mag').innerText = state.player.mag||0;
-    $('floor').innerText = state.player.floor||1;
-    $('gold').innerText = state.player.gold||0;
-    $('xp').innerText = state.player.xp||0;
-    $('slotWeapon').innerHTML = state.player.equip?.weapon ? (state.player.equip.weapon.baseName || state.player.equip.weapon.name) : 'None';
-    $('slotArmor').innerHTML = state.player.equip?.armor ? (state.player.equip.armor.baseName || state.player.equip.armor.name) : 'None';
-    $('slotAccessory').innerHTML = state.player.equip?.accessory ? (state.player.equip.accessory.baseName || state.player.equip.accessory.name) : 'None';
-    $('invSummary').innerText = `Potions: ${state.player.potions||0} • Ethers: ${state.player.ethers||0} • Items: ${(state.player.inventory||[]).length}`;
-  } else {
-    $('playerName').innerText = '—';
+  /* =====================
+     FX: floating popup & particles
+     ===================== */
+  function showPopup(text,where='fx'){
+    const el = document.createElement("div"); el.className = "float-popup"; el.textContent = text; refs.fxLayer.prepend(el);
+    setTimeout(()=> el.classList.add("show"), 20);
+    setTimeout(()=> { el.classList.remove("show"); setTimeout(()=> el.remove(), 600); }, 1600);
+  }
+  function spawnParticles(x,y,color='#ffd7a6',amount=14){
+    for(let i=0;i<amount;i++){
+      const p = document.createElement("div"); p.className="particle"; p.style.background=color;
+      p.style.left=`${x}px`; p.style.top=`${y}px`; document.body.appendChild(p);
+      const vx = randInt(-80,80), vy = randInt(-140,-40);
+      p.style.transform = `translate(${vx}px, ${vy}px) scale(${Math.random()*1.2+0.4})`;
+      p.style.opacity = 0; setTimeout(()=> p.style.opacity = 1, 20);
+      setTimeout(()=> { p.style.opacity = 0; p.style.transform += " scale(0.2)"; }, 700+randInt(0,300));
+      setTimeout(()=> p.remove(), 1400 + randInt(0,400));
+    }
   }
 
-  if(state.inCombat && state.currentEnemy){
-    $('combatUI').classList.remove('hidden');
-    $('enemyName').innerText = `${state.currentEnemy.rarity || 'Common'} ${state.currentEnemy.name}`;
-    $('enemyHP').innerText = Math.max(0, state.currentEnemy.currentHp||0);
-    $('enemyATK').innerText = state.currentEnemy.atk||0;
-    $('enemyStatus').innerText = (state.currentEnemy.status && state.currentEnemy.status.length)? state.currentEnemy.status.map(s=>s.k).join(','): '—';
-    $('encounterTitle').innerText = state.currentEnemy.name;
-    $('encounterText').innerText = state.currentEnemy.isBoss ? 'Boss battle — focus and survive.' : 'Battle — choose your action.';
-    const ba = $('battleArea'); ba.innerHTML = '';
-    const spr = createMonsterSpriteEl(state.currentEnemy.sprite || 'rat');
-    ba.appendChild(spr);
-    const name = document.createElement('div'); name.className = `enemy ${state.currentEnemy.rarity||'Common'}`; name.innerText = `${state.currentEnemy.rarity||'Common'} • ${state.currentEnemy.name}`; ba.appendChild(name);
-  } else {
-    $('combatUI').classList.add('hidden');
-    $('encounterTitle').innerText = state.player ? `Floor ${state.player.floor}` : 'Welcome';
-    $('encounterText').innerText = 'Explore rooms, fight monsters, collect relics.';
-    $('battleArea').innerHTML = '';
+  /* =====================
+     Aces helpers
+     ===================== */
+  function totalAcesValue(){
+    const a = state.aces;
+    return a.clubs*ACE_VALUES.clubs + a.diamonds*ACE_VALUES.diamonds + a.hearts*ACE_VALUES.hearts + a.spades*ACE_VALUES.spades;
+  }
+  function coinsFromValue(value){
+    const out={spades:0,hearts:0,diamonds:0,clubs:0}; let v=Math.max(0,Math.floor(value));
+    const order=['spades','hearts','diamonds','clubs'];
+    for(const k of order){ const val=ACE_VALUES[k]; out[k]=Math.floor(v/val); v=v%val; } return out;
+  }
+  function setAcesFromValue(value){ const c=coinsFromValue(value); state.aces.clubs=c.clubs; state.aces.diamonds=c.diamonds; state.aces.hearts=c.hearts; state.aces.spades=c.spades; }
+  function addAcesValue(value){ setAcesFromValue(totalAcesValue()+Math.floor(value)); }
+  function trySpendAces(value){ if(totalAcesValue() < value) return false; setAcesFromValue(totalAcesValue()-value); return true; }
+
+  /* =====================
+     Item creation (gear & consumables)
+     ===================== */
+  const PREFIXES = ["Burning","Frozen","Vicious","Blessed","Cursed","Ancient","Swift","Sturdy","Mystic"];
+  const SUFFIXES = ["of Fury","of the Owl","of the Bear","of Swiftness","of Protection","of Power","of Woe"];
+  function makeItem(rarity){
+    const basePowerMap = {"Common": randInt(1,4),"Uncommon":randInt(3,7),"Rare":randInt(6,12),"Super Rare":randInt(10,18),"Epic":randInt(16,26),"Most Def Epic":randInt(22,34),"Powerful":randInt(28,42),"Legendary":randInt(40,60),"Mythic":randInt(60,95)};
+    const basePower = basePowerMap[rarity] || 1;
+    const slot = ["Weapon","Armor","Accessory"][randInt(0,2)];
+    const prefix = randInt(1,100) <= 40 ? PREFIXES[randInt(0,PREFIXES.length-1)] + " " : "";
+    const suffix = randInt(1,100) <= 45 ? " " + SUFFIXES[randInt(0,SUFFIXES.length-1)] : "";
+    const name = `${prefix}${slot}${suffix}`.trim();
+    return { id: Math.random().toString(36).slice(2,8), name, rarity, power: basePower, slot, level:1, type:"gear" };
+  }
+  function makeConsumable(rarity){
+    const pool=[
+      {key:"heal_small",name:"Healing Potion",desc:"Restore 30% HP",rarity:"Common",costValue:10},
+      {key:"heal_big",name:"Greater Potion",desc:"Restore 60% HP",rarity:"Rare",costValue:50},
+      {key:"power_tonic",name:"Power Tonic",desc:"+25% ATK next battle",rarity:"Uncommon",costValue:25},
+      {key:"shield_brew",name:"Shield Brew",desc:"Reduce next 2 hits by 30%",rarity:"Rare",costValue:50},
+      {key:"mythic_elixir",name:"Mythic Elixir",desc:"Full heal + buff",rarity:"Mythic",costValue:200}
+    ];
+    const candidates = pool.filter(p=> RARITIES.indexOf(p.rarity) <= Math.max(0, RARITIES.indexOf(rarity)));
+    const pick = candidates.length ? candidates[randInt(0,candidates.length-1)] : pool[0];
+    return { id: Math.random().toString(36).slice(2,8), name: pick.name, desc: pick.desc, rarity: pick.rarity, power:0, slot:null, level:1, type:"consumable", consumableKey: pick.key, costValue: pick.costValue };
   }
 
-  renderRelicsUI();
-  renderJournal();
-  renderMeta();
-  if($('fragments')) $('fragments').innerText = state.meta.fragments||0;
-  if($('seedDisplay')) $('seedDisplay').innerText = state.seed||'—';
-  checkAchievements();
-  fullSave();
-}
-
-/* ---------- boot ---------- */
-function gameInit(seedString, cls){
-  state.seed = seedString || String(Date.now());
-  initSeed(state.seed);
-  if(fullLoad()){
-    if(state.seed !== window.CURRENT_SEED) initSeed(state.seed);
-    log('Save loaded on boot.');
-  } else {
-    log('No save — start a new run. Seed: ' + state.seed);
-    fullSave();
+  /* =====================
+     Loot roll & award Aces
+     ===================== */
+  function rollLoot(monster){
+    const bias = Math.max(1, RARITIES.indexOf(monster.rarity) + 1);
+    const rolls = randInt(0, Math.min(2, Math.floor(bias / 2)));
+    const items=[];
+    for(let i=0;i<=rolls;i++){
+      const weights = {...BASE_RARITY_WEIGHTS}; const mIdx = RARITIES.indexOf(monster.rarity);
+      for(const r of RARITIES){ const idx = RARITIES.indexOf(r); if(idx <= mIdx) weights[r] = Math.round(weights[r] * (1 + (idx / (mIdx + 1)) * 0.5)); }
+      const lvl = state.player.level, luck = state.player.skills.luck || 0;
+      RARITIES.forEach((r, idx)=>{ if(idx>=3) weights[r] += Math.round((lvl*0.02 + luck*0.04) * weights[r]); });
+      const dropRarity = chooseWeighted(weights);
+      if(randInt(1,100) <= 20) items.push(makeConsumable(dropRarity)); else items.push(makeItem(dropRarity));
+    }
+    if(items.length === 0) items.push(makeItem("Common"));
+    return items;
   }
-  wireUI(); renderAll();
-  if(cls) newRun(cls, state.seed, false);
-}
-window.gameInit = gameInit;
+  function awardAcesForMonster(mon){
+    const table = {
+      "Common":[{k:"clubs",w:90},{k:"diamonds",w:10}],
+      "Uncommon":[{k:"clubs",w:60},{k:"diamonds",w:30},{k:"hearts",w:10}],
+      "Rare":[{k:"diamonds",w:50},{k:"hearts",w:40},{k:"spades",w:10}],
+      "Super Rare":[{k:"hearts",w:60},{k:"spades",w:40}],
+      "Epic":[{k:"hearts",w:45},{k:"spades",w:55}],
+      "Most Def Epic":[{k:"hearts",w:35},{k:"spades",w:65}],
+      "Powerful":[{k:"spades",w:80},{k:"hearts",w:20}],
+      "Legendary":[{k:"spades",w:90},{k:"hearts",w:10}],
+      "Mythic":[{k:"spades",w:100}]
+    };
+    const pool = table[mon.rarity] || table.Common;
+    let num = 1 + (RARITIES.indexOf(mon.rarity) >= 6 ? randInt(0,1) : 0);
+    const luck = state.player.skills.luck || 0;
+    for(let i=0;i<num;i++){
+      const wmap={}; pool.forEach(p=> wmap[p.k] = p.w + Math.round((RARITIES.indexOf(mon.rarity) * luck) * 0.8));
+      const pick = chooseWeighted(wmap);
+      state.aces[pick] = (state.aces[pick] || 0) + 1;
+      showPopup(`+1 ${({clubs:"♣",diamonds:"♦",hearts:"♥",spades:"♠"})[pick]}`);
+    }
+    updateAcesUI();
+  }
 
-/* auto-run if seed in global */
-if(window.INIT_SEED) gameInit(window.INIT_SEED);
+  /* =====================
+     Status Effects System (apply to player & monsters)
+     - effects stored: state.statusEffects.player = [{...}], state.statusEffects.monster[monsterId] = [{...}]
+     - each effect: {type, duration, magnitude, source}
+     ===================== */
+  function addStatusTo(target, effect){
+    // target: "player" or monster object with id
+    if(target === "player"){
+      state.statusEffects.player.push(effect);
+    } else if(target && target.id){
+      state.statusEffects.monster[target.id] = state.statusEffects.monster[target.id] || [];
+      state.statusEffects.monster[target.id].push(effect);
+    }
+  }
+  function removeExpiredStatuses(){
+    state.statusEffects.player = state.statusEffects.player.filter(s => s.duration > 0);
+    for(const mid of Object.keys(state.statusEffects.monster)){
+      state.statusEffects.monster[mid] = state.statusEffects.monster[mid].filter(s => s.duration > 0);
+      if(state.statusEffects.monster[mid].length === 0) delete state.statusEffects.monster[mid];
+    }
+  }
+  function applyStatusesOnStartTurn(actor){
+    // actor: "player" or monster object
+    if(actor === "player"){
+      const p = state.player;
+      const arr = state.statusEffects.player || [];
+      arr.forEach(e => {
+        if(e.type === "Poison"){ const dmg = Math.max(1, Math.floor(p.maxHp * (e.magnitude || 0.05))); p.hp = Math.max(0, p.hp - dmg); log(`Poison deals ${dmg} to you.`); }
+        if(e.type === "Bleed"){ const dmg = Math.max(1, Math.floor((e.magnitude || 2))); p.hp = Math.max(0, p.hp - dmg); log(`Bleed deals ${dmg} to you.`); }
+        if(e.type === "Regen"){ const amt = Math.max(1, Math.floor(p.maxHp * (e.magnitude || 0.05))); p.hp = Math.min(p.maxHp, p.hp + amt); log(`Regen restores ${amt}.`); }
+        // Freeze/Stun handled elsewhere (prevents action)
+        e.duration--;
+      });
+    } else if(actor && actor.id){
+      const arr = state.statusEffects.monster[actor.id] || [];
+      arr.forEach(e=>{
+        if(e.type === "Poison"){ const dmg = Math.max(1, Math.floor(actor.maximumHp * (e.magnitude || 0.05))); actor.hp = Math.max(0, actor.hp - dmg); log(`${actor.name} suffers Poison ${dmg}.`); }
+        if(e.type === "Burn"){ const dmg = Math.max(1, Math.floor(actor.maximumHp * (e.magnitude || 0.04))); actor.hp = Math.max(0, actor.hp - dmg); log(`${actor.name} suffers Burn ${dmg}.`); }
+        if(e.type === "Bleed"){ const dmg = Math.max(1, Math.floor((e.magnitude || 3))); actor.hp = Math.max(0, actor.hp - dmg); log(`${actor.name} bleeds ${dmg}.`); }
+        if(e.type === "Regen"){ const amt = Math.max(1, Math.floor(actor.maximumHp*(e.magnitude||0.04))); actor.hp = Math.min(actor.maximumHp, actor.hp + amt); log(`${actor.name} regenerates ${amt}.`); }
+        e.duration--;
+      });
+    }
+    removeExpiredStatuses();
+  }
+  function hasStatus(target, type){
+    if(target === "player") return state.statusEffects.player.some(s=>s.type===type);
+    if(target && target.id) return (state.statusEffects.monster[target.id]||[]).some(s=>s.type===type);
+    return false;
+  }
 
-// expose some helpers for console
-window.getItemIcon = getItemIcon;
+  /* =====================
+     Companions (summons)
+     ===================== */
+  function showCompanions(){
+    if(state.companions.length === 0){ refs.companionsList.textContent = "None"; return; }
+    refs.companionsList.innerHTML = state.companions.map(c => `${c.name} (acts every ${c.trigger}t)`).join(" • ");
+  }
+  function recruitRandomCompanion(){
+    // cost-based: choose from COMPANION_POOL, player must pay
+    const choice = COMPANION_POOL[randInt(0,COMPANION_POOL.length-1)];
+    if(!trySpendAces(choice.cost)){ log("Not enough Aces to recruit " + choice.name); return; }
+    const copy = JSON.parse(JSON.stringify(choice)); copy.id = choice.id + "-" + Math.random().toString(36).slice(2,6); copy.turnCounter = 0;
+    state.companions.push(copy);
+    log(`Recruited companion: ${copy.name}`);
+    showCompanions(); saveState();
+  }
+  function companionTickTurn(){
+    // called each player turn end: increment counters and trigger companions appropriately
+    state.companions.forEach(c=>{
+      c.turnCounter = (c.turnCounter || 0) + 1;
+      if(c.turnCounter >= c.trigger){
+        c.turnCounter = 0;
+        // perform ability
+        if(c.ability === "burn"){
+          const mon = state.currentMonster;
+          if(mon){
+            const mag = (c.power || 6) / 100; // percent-based small burn
+            addStatusTo(mon, {type:"Burn", duration:3, magnitude:0.02, source:"companion"});
+            spawnParticles((refs.monsterArea.getBoundingClientRect().left + 80), (refs.monsterArea.getBoundingClientRect().top + 40), '#ffb18a', 8);
+            log(`${c.name} applies Burn to ${mon.name}.`);
+            // immediate small hit
+            const hit = Math.max(1, Math.floor((totalAcesValue()/50) + 3));
+            mon.hp = Math.max(0, mon.hp - hit);
+          }
+        } else if(c.ability === "shield"){
+          const p = state.player; p._tempBuff = p._tempBuff || {}; p._tempBuff.shield = Math.max(p._tempBuff.shield||0, 1 + Math.floor(c.power*3));
+          spawnParticles(refs.playerHpFill.getBoundingClientRect().left + 30, refs.playerHpFill.getBoundingClientRect().top+10, '#b6ffcf', 8);
+          log(`${c.name} grants a shield for next hits.`);
+        } else if(c.ability === "ace_power"){
+          const mon = state.currentMonster;
+          if(mon){
+            const dmg = Math.max(2, Math.floor(totalAcesValue()/5));
+            mon.hp = Math.max(0, mon.hp - dmg);
+            spawnParticles((refs.monsterArea.getBoundingClientRect().left + 80), (refs.monsterArea.getBoundingClientRect().top + 40), '#ffd7a6', 8);
+            log(`${c.name} deals ${dmg} damage (Ace-powered).`);
+          }
+        }
+        saveState();
+      }
+    });
+  }
+
+  /* =====================
+     Combat core: attack, special, monster turn
+     - incorporates status checks (Freeze/Stun)
+     - companion triggers
+     ===================== */
+  function playerAttack(isSpecial=false){
+    const mon = state.currentMonster; if(!mon) return;
+    // Start-of-turn statuses for player & monster
+    applyStatusesOnStartTurn("player");
+    applyStatusesOnStartTurn(mon);
+    // check if player stunned/frozen
+    if(hasStatus("player","Stun") || hasStatus("player","Freeze")){ log("You are unable to act due to status."); return; }
+    disableControls(true);
+    const p = state.player;
+    let baseAtk = p.attack + Math.floor(p.skills.attack * 1.5) + randInt(-2,4);
+    if(p._tempBuff && p._tempBuff.powerMult) baseAtk = Math.floor(baseAtk * p._tempBuff.powerMult);
+    let dmg = baseAtk;
+    const critChance = p.crit + (p.skills.luck * 0.8);
+    if(rollChance(critChance)){ dmg = Math.floor(dmg * 1.9); log("Critical hit!"); }
+    if(isSpecial){
+      if(p.specialCooldown === 0){ dmg += Math.floor(p.attack * 1.5) + randInt(2,6); p.specialCooldown = Math.max(1, 3 - Math.floor(p.skills.attack/2)); log("Special attack!"); }
+      else { log("Special not ready!"); }
+    }
+    const monD = clamp(2 + RARITIES.indexOf(mon.rarity) * 0.4, 0, 16);
+    if(rollChance(monD)){ log(`${mon.name} dodged your attack!`); dmg = 0; }
+    dmg = Math.max(0,dmg);
+    // monster shield reduction effects apply on monster side too: if they have regen/shield statuses reduce differently (handled on their turn)
+    applyMonsterDamage(mon, dmg);
+    setTimeout(()=>{
+      if(mon.hp > 0){
+        // monster start-turn statuses before acting (they got tick earlier)
+        monsterTurn(mon);
+      } else handleMonsterDefeat(mon);
+      // companion actions occur after monster turn & end of player's turn
+      companionTickTurn();
+      // decrement player's temp buff turn counters
+      if(p._tempBuff && p._tempBuff.turns){ p._tempBuff.turns--; if(p._tempBuff.turns <= 0) delete p._tempBuff.powerMult; }
+      if(p.specialCooldown > 0) p.specialCooldown--;
+      updateUI(); disableControls(false); saveState();
+    }, 420);
+  }
+  function applyMonsterDamage(mon, damage){
+    mon.hp = Math.max(0, mon.hp - damage);
+    log(`You hit ${mon.name} for ${damage}.`);
+    if(mon._hpFill) mon._hpFill.style.width = `${(mon.hp / mon.maximumHp)*100}%`;
+  }
+  function monsterTurn(mon){
+    // apply statuses at start of monster's action (ticks done in applyStatusesOnStartTurn called earlier)
+    applyStatusesOnStartTurn(mon);
+    if(mon.hp <= 0) return;
+    // check freeze/stun on monster
+    if(hasStatus(mon,"Stun") || hasStatus(mon,"Freeze")){
+      log(`${mon.name} is unable to act due to status.`);
+      return;
+    }
+    // ability chance
+    if(mon.abilities && mon.abilities.length && randInt(1,100) <= (12 + RARITIES.indexOf(mon.rarity)*3 + (mon.isBoss?10:0))){
+      const ability = mon.abilities[randInt(0,mon.abilities.length-1)];
+      handleMonsterAbility(mon, ability);
+      return;
+    }
+    // normal attack
+    const p = state.player;
+    if(rollChance(p.dodge + p.skills.defense * 0.5)){ log("You dodged the attack!"); return; }
+    let dmg = mon.attack + randInt(-2,2);
+    if(p._tempBuff && p._tempBuff.shield && p._tempBuff.shield > 0){
+      const reduce = Math.floor(dmg * 0.30); dmg = Math.max(0, dmg - reduce); p._tempBuff.shield--; log("Your shield reduced damage!");
+    }
+    if(rollChance(6 + RARITIES.indexOf(mon.rarity))) { dmg = Math.floor(dmg * 2); log("Monster critical strike!"); }
+    p.hp = Math.max(0, p.hp - dmg);
+    log(`${mon.name} hits you for ${dmg}.`);
+    updateUI();
+    if(p.hp <= 0) handlePlayerDeath();
+  }
+  function handleMonsterAbility(mon, ability){
+    if(ability === "heal"){ const amount = Math.floor(mon.maximumHp * 0.16); mon.hp = Math.min(mon.maximumHp, mon.hp + amount); log(`${mon.name} heals ${amount} HP.`); }
+    else if(ability === "enrage"){ mon.attack = Math.floor(mon.attack * 1.22); log(`${mon.name} grows enraged!`); }
+    else if(ability === "shield"){ const amt = Math.floor(mon.maximumHp * 0.12); mon.hp = Math.min(mon.maximumHp + amt, mon.maximumHp + Math.floor(mon.maximumHp * 0.2)); log(`${mon.name} raises a shield.`); }
+    else if(ability === "double-hit"){ const p = state.player; if(rollChance(p.dodge + p.skills.defense*0.5)){ log("You dodged a double attack!"); return; } const d1=Math.max(1,mon.attack+randInt(-2,1)), d2=Math.max(1,mon.attack+randInt(-1,2)); p.hp=Math.max(0,p.hp-d1-d2); log(`${mon.name} hits twice for ${d1} and ${d2}.`); updateUI(); if(p.hp<=0) handlePlayerDeath(); }
+    else log(`${mon.name} does something odd.`);
+  }
+
+  /* =====================
+     Death / Defeat / Rewards
+     ===================== */
+  function handleMonsterDefeat(mon){
+    log(`${mon.name} defeated!`);
+    awardAcesForMonster(mon);
+    const xp = calculateXpGain(mon); grantXp(xp);
+    const drops = rollLoot(mon);
+    drops.forEach(d => { state.loot.push(d); log(`Loot: ${d.name} (${d.rarity})`); });
+    renderLoot();
+    // particle burst near loot
+    const lootRect = document.getElementById("loot-list").getBoundingClientRect();
+    spawnParticles(lootRect.left + lootRect.width/2, lootRect.top + 20, '#ffd7a6', 18);
+    state.totalMonstersDefeated = (state.totalMonstersDefeated || 0) + 1;
+    state.monstersClearedInZone = (state.monstersClearedInZone || 0) + 1;
+    if(state.monstersClearedInZone >= MONSTERS_PER_ZONE){ state.zoneIndex = Math.min(ZONES.length-1, state.zoneIndex + 1); state.monstersClearedInZone = 0; log(`You progress to zone: ${ZONES[state.zoneIndex].name}`); applyZoneBackground(); }
+    setTimeout(()=>{
+      state.currentMonster = null; renderMonster(null);
+      if(state.totalMonstersDefeated % BOSS_EVERY === 0){
+        const boss = generateMonster(true); state.currentMonster = boss; renderMonster(boss); log(`A BOSS appears: ${boss.name}!`);
+      } else {
+        state.monsterQueue.shift(); state.monsterQueue.push(generateMonster()); renderQueue(); spawnNextMonster();
+      }
+      updateUI(); saveState();
+    }, 700);
+  }
+
+  /* =====================
+     XP & leveling
+     ===================== */
+  function calculateXpGain(monster){ const base = Math.floor((monster.maximumHp*0.8) + (monster.attack*8)); const mult = {"Common":0.6,"Uncommon":0.9,"Rare":1.1,"Super Rare":1.4,"Epic":1.8,"Most Def Epic":2.2,"Powerful":2.8,"Legendary":3.8,"Mythic":5.0}[monster.rarity] || 1; return Math.max(5, Math.floor(base*mult/10)); }
+  function grantXp(amount){ const p=state.player; p.xp+=amount; showPopup(`+${amount} XP`); log(`Gained ${amount} XP.`); while(p.xp >= p.xpToNext){ p.xp -= p.xpToNext; levelUp(); } updateUI(); saveState(); }
+  function levelUp(){ const p=state.player; p.level+=1; p.skillPoints+=1; p.baseMaxHp += Math.floor(10 + p.level * 1.4); p.baseAttack += Math.floor(2 + p.level * 0.24); p.xpToNext = xpForLevel(p.level); recalcStats(); p.hp = p.maxHp; showLevelUp(); log(`Level up! Now level ${p.level}. +1 skill point.`); }
+  function showLevelUp(){ const el = refs.levelupBadge; el.style.opacity = "1"; el.classList.remove("levelup-anim"); void el.offsetWidth; el.classList.add("levelup-anim"); setTimeout(()=> el.style.opacity = "0", 1200); }
+
+  /* =====================
+     Merchant & Enchanting
+     ===================== */
+  function refreshMerchant(){
+    const inv = [];
+    for(let i=0;i<6;i++){
+      if(randInt(1,100) <= 45){ const c = makeConsumable(RARITIES[Math.max(0,Math.min(RARITIES.length-1,Math.floor(state.player.level/4)))]); c.price = Math.max(5, Math.floor((c.costValue||10)*(1+state.player.level*0.04))); inv.push(c); }
+      else { const rarity = RARITIES[Math.min(RARITIES.length-1, Math.floor(state.player.level/3 + randInt(0,2)))]; const item = makeItem(rarity); item.price = Math.ceil((Math.max(10,Math.floor(item.power*(1+(RARITIES.indexOf(rarity)*0.12))*(1+state.player.level*0.03))))/5)*5; inv.push(item); }
+    }
+    state.merchant.inventory = inv; renderMerchant();
+  }
+  function renderMerchant(){
+    refs.merchantInventory.innerHTML = "";
+    state.merchant.inventory.forEach(it=>{
+      const d = document.createElement("div"); d.className = "merchant-item " + (it.rarity? rarityClass(it.rarity):'');
+      const left = document.createElement("div"); left.innerHTML = `<strong>${it.name}</strong><div class="small">${it.rarity || ''} ${it.desc?(' • '+it.desc):''}</div>`;
+      const right = document.createElement("div"); right.innerHTML = `<div class="small">Price: ${it.price || it.costValue} value</div>`;
+      const btn = document.createElement("button"); btn.textContent="Buy"; btn.addEventListener("click", ()=>{
+        const price = it.price||it.costValue||10;
+        if(trySpendAces(price)){ const copy = JSON.parse(JSON.stringify(it)); copy.id = Math.random().toString(36).slice(2,8); state.loot.push(copy); log(`Purchased ${it.name} for ${price} value.`); renderLoot(); updateUI(); saveState(); } else log("Not enough Aces.");
+      });
+      right.appendChild(btn); d.appendChild(left); d.appendChild(right); refs.merchantInventory.appendChild(d);
+    });
+  }
+
+  /* Enchant system */
+  const ENCHANT_COST = {"Common":10,"Uncommon":25,"Rare":50,"Super Rare":90,"Epic":150,"Most Def Epic":240,"Powerful":320,"Legendary":480,"Mythic":800};
+  function openEnchant(){
+    refs.enchantModal.classList.remove("hidden"); refs.enchantTarget.innerHTML = ""; refs.enchantOptions.innerHTML = "";
+    const gear = state.loot.concat(Object.values(state.equipment).filter(Boolean)).filter(i=> i && i.type === "gear");
+    if(gear.length === 0){ refs.enchantTarget.innerHTML = "<div class='small'>No gear available to enchant.</div>"; refs.enchantConfirm.disabled = true; return; }
+    refs.enchantConfirm.disabled = false;
+    gear.forEach(it=>{
+      const row = document.createElement("div"); row.className = "merchant-item " + rarityClass(it.rarity);
+      row.innerHTML = `<div><strong>${it.name}</strong><div class="small">${it.rarity} • lvl ${it.level}</div></div>`;
+      row.addEventListener("click", ()=> selectEnchantTarget(it));
+      refs.enchantTarget.appendChild(row);
+    });
+  }
+  let _selectedEnchantTarget = null;
+  function selectEnchantTarget(item){
+    _selectedEnchantTarget = item;
+    refs.enchantOptions.innerHTML = `<div class="small">Target: <strong>${item.name}</strong> — cost: ${ENCHANT_COST[item.rarity] || 50} value</div><div class="small">Possible bonuses (random):</div>`;
+    const possible = rollEnchantOptionsForRarity(item.rarity);
+    possible.forEach((o, idx)=>{
+      const b = document.createElement("div"); b.className="small"; b.textContent = `${o.label}`;
+      refs.enchantOptions.appendChild(b);
+    });
+  }
+  function rollEnchantOptionsForRarity(rarity){
+    const pool = [
+      {k:'atk%',label:'+ATK %',range:[5,12]},
+      {k:'crit',label:'+Crit %',range:[2,6]},
+      {k:'regen',label:'+Regen %',range:[2,6]},
+      {k:'dmg%',label:'+Damage %',range:[4,10]},
+      {k:'def%',label:'+HP %',range:[4,10]}
+    ];
+    const idx = RARITIES.indexOf(rarity);
+    return pool.map(p=>{
+      const baseMin = p.range[0] + Math.floor(idx*0.6);
+      const baseMax = p.range[1] + Math.floor(idx*1.2);
+      const val = randInt(baseMin, baseMax);
+      return {type:p.k,label:`${p.label} +${val}%`, value:val};
+    }).slice(0,3);
+  }
+  function confirmEnchant(){
+    if(!_selectedEnchantTarget){ log("Select an item first."); return; }
+    const cost = ENCHANT_COST[_selectedEnchantTarget.rarity] || 50;
+    if(!trySpendAces(cost)){ log("Not enough Aces value for enchant."); return; }
+    const baseChance = clamp(48 + RARITIES.indexOf(_selectedEnchantTarget.rarity)*6, 55, 95);
+    const success = rollChance(baseChance);
+    if(!success){ log("Enchantment failed. Aces consumed."); saveState(); refs.enchantModal.classList.add("hidden"); return; }
+    const picks = rollEnchantOptionsForRarity(_selectedEnchantTarget.rarity);
+    const chosen = picks[randInt(0, picks.length-1)];
+    state.enchantments[_selectedEnchantTarget.id] = state.enchantments[_selectedEnchantTarget.id] || [];
+    state.enchantments[_selectedEnchantTarget.id].push(chosen);
+    log(`Enchanted ${_selectedEnchantTarget.name}: ${chosen.label}`);
+    renderLoot(); updateUI(); saveState(); refs.enchantModal.classList.add("hidden");
+  }
+
+  /* =====================
+     Equip / Sell / Upgrade / Consumables
+     ===================== */
+  function equipItem(item){
+    if(item.type === "consumable"){ useConsumable(item); return; }
+    const old = state.equipment[item.slot];
+    if(old && old.id === item.id){ delete state.equipment[item.slot]; log(`Unequipped ${item.name}.`); }
+    else { state.equipment[item.slot] = item; log(`Equipped ${item.name}.`); }
+    recalcStats(); renderLoot(); updateUI(); saveState();
+  }
+  function sellItem(item){
+    const rarityMult = {Common:1,Uncommon:1.3,Rare:1.6,"Super Rare":2.0,Epic:2.6,"Most Def Epic":3.2,Powerful:3.8,Legendary:5.0,Mythic:8.0}[item.rarity] || 1;
+    const base = (item.power || 1) * rarityMult;
+    const sellValue = Math.max(5, Math.floor(base * 0.5));
+    addAcesValue(sellValue);
+    const idx = state.loot.findIndex(l => l.id === item.id); if(idx >= 0) state.loot.splice(idx,1);
+    log(`Sold ${item.name} for ${sellValue} value (Aces).`); renderLoot(); updateUI(); saveState();
+  }
+  function upgradeItem(item){
+    const rarityCostScale = {"Common":1,"Uncommon":2,"Rare":4,"Super Rare":8,"Epic":12,"Most Def Epic":18,"Powerful":22,"Legendary":40,"Mythic":80};
+    const cost = (rarityCostScale[item.rarity] || 1) * item.level * 12;
+    if(!trySpendAces(cost)){ log(`Need ${cost} value to upgrade.`); return false; }
+    item.level += 1; item.power = Math.floor(item.power * (1 + 0.16 + Math.random()*0.12));
+    log(`${item.name} upgraded to lvl ${item.level}. (-${cost} value)`); recalcStats(); renderLoot(); updateUI(); saveState(); return true;
+  }
+  function useConsumable(item){
+    const p = state.player;
+    if(item.consumableKey === "heal_small"){ const amount = Math.max(1, Math.floor(p.maxHp * 0.30)); p.hp = Math.min(p.maxHp, p.hp + amount); log(`Used ${item.name} — restored ${amount} HP.`); }
+    else if(item.consumableKey === "heal_big"){ const amount = Math.max(1, Math.floor(p.maxHp * 0.60)); p.hp = Math.min(p.maxHp, p.hp + amount); log(`Used ${item.name} — restored ${amount} HP.`); }
+    else if(item.consumableKey === "power_tonic"){ p._tempBuff = p._tempBuff || {}; p._tempBuff.powerMult = 1.25; p._tempBuff.turns = 1; log(`Used ${item.name} — +25% ATK next battle.`); }
+    else if(item.consumableKey === "shield_brew"){ p._tempBuff = p._tempBuff || {}; p._tempBuff.shield = (p._tempBuff.shield || 0) + 2; log(`Used ${item.name} — shield ready.`); }
+    else if(item.consumableKey === "mythic_elixir"){ p.hp = p.maxHp; p._tempBuff = p._tempBuff||{}; p._tempBuff.powerMult=1.3; p._tempBuff.turns=2; log(`Used ${item.name} — full heal and buff!`); }
+    const idx = state.loot.findIndex(l=> l.id === item.id); if(idx>=0) state.loot.splice(idx,1);
+    renderLoot(); updateUI(); saveState();
+  }
+
+  /* =====================
+     Render functions (monster, loot, merchant)
+     ===================== */
+  function renderMonster(mon){
+    refs.monsterArea.innerHTML = "";
+    if(!mon) return;
+    const card = document.createElement("div"); card.className="monster "+rarityClass(mon.rarity)+" spawn"; card.style.position="relative";
+    const avatar = document.createElement("div"); avatar.className="avatar"; avatar.textContent = `${mon.name}${mon.isBoss? " (BOSS)":""}`; card.appendChild(avatar);
+    const statusIcons = document.createElement("div"); statusIcons.className = "status-icons";
+    // show monster statuses
+    const arr = state.statusEffects.monster[mon.id] || [];
+    arr.forEach(s => { const sp = document.createElement("div"); sp.className="small"; sp.textContent = s.type + (s.duration? ` (${s.duration})`: ''); statusIcons.appendChild(sp); });
+    card.appendChild(statusIcons);
+    const hpBar = document.createElement("div"); hpBar.className="hp-bar"; const fill = document.createElement("div"); fill.className="hp-fill"; fill.style.width = `${(mon.hp/mon.maximumHp)*100}%`; hpBar.appendChild(fill); card.appendChild(hpBar);
+    const status = document.createElement("div"); status.className="small"; status.textContent = `${mon.hp} / ${mon.maximumHp} HP • ATK ${mon.attack} • ${mon.rarity}${mon.abilities && mon.abilities.length ? " • Ability":""}`; card.appendChild(status);
+    refs.monsterArea.appendChild(card); mon._el = card; mon._hpFill = fill;
+  }
+  function renderQueue(){ refs.monsterQueue.innerHTML=""; state.monsterQueue.forEach(m=>{ const q=document.createElement("div"); q.className="queue-card "+rarityClass(m.rarity); q.textContent=`${m.name} (${m.rarity})`; refs.monsterQueue.appendChild(q); }); }
+
+  function renderLoot(){
+    refs.lootList.innerHTML = "";
+    state.loot.slice().reverse().forEach(item=>{
+      const div = document.createElement("div"); div.className = "item "+(item.rarity?rarityClass(item.rarity):'');
+      let mid = `<div style="padding-left:54px"><strong>${item.name}</strong><div class="small">${item.rarity || ""} ${item.desc?('• '+item.desc):''} ${item.slot?('• '+item.slot):''}</div></div>`;
+      div.innerHTML = `<div style="position:relative;">${mid}</div>`;
+      const rune = document.createElement("canvas"); rune.className="rune"; rune.width=46; rune.height=46; rune.style.left="6px"; rune.style.top="6px"; rune.style.position="absolute";
+      if(state.enchantments[item.id]){ div.classList.add("enchant-glow"); rune.classList.add("rune-anim"); }
+      div.appendChild(rune);
+      const actions = document.createElement("div"); actions.className="actions";
+      const primaryBtn = document.createElement("button"); primaryBtn.textContent = item.type==="consumable" ? "Use" : "Equip"; primaryBtn.addEventListener("click", ()=> item.type==="consumable" ? useConsumable(item) : equipItem(item));
+      const upgradeBtn = document.createElement("button"); upgradeBtn.textContent = "Upgrade"; upgradeBtn.addEventListener("click", ()=> upgradeItem(item));
+      const sellBtn = document.createElement("button"); sellBtn.textContent = "Sell"; sellBtn.addEventListener("click", ()=> sellItem(item));
+      actions.appendChild(primaryBtn); actions.appendChild(upgradeBtn); actions.appendChild(sellBtn);
+      div.appendChild(actions); refs.lootList.appendChild(div);
+      if(state.enchantments[item.id]) drawRunesOnCanvas(rune, state.enchantments[item.id]); else rune.remove();
+    });
+  }
+  function drawRunesOnCanvas(canvas, enchants){
+    try{
+      const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width,canvas.height);
+      const colorMap = { 'atk%':'#ffdd9c', 'crit':'#ffd4ff','regen':'#b6ffcf','dmg%':'#ffd7a6','def%':'#bcd4ff' };
+      const c = enchants[0] || {type:'atk%', value:6}; const col = colorMap[c.type] || '#fff2cc';
+      ctx.globalAlpha = 0.9; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(23,23,18,0,Math.PI*2); ctx.stroke();
+      for(let i=0;i<6;i++){ ctx.beginPath(); ctx.moveTo(23,23); ctx.lineTo(23 + Math.cos(i/6*Math.PI*2)*12, 23 + Math.sin(i/6*Math.PI*2)*12); ctx.stroke(); }
+    }catch(e){}
+  }
+
+  function updateAcesUI(){ refs.aceClubs.textContent = state.aces.clubs || 0; refs.aceDiamonds.textContent = state.aces.diamonds || 0; refs.aceHearts.textContent = state.aces.hearts || 0; refs.aceSpades.textContent = state.aces.spades || 0; refs.aceTotal.textContent = totalAcesValue(); }
+
+  function updateUI(){
+    const p = state.player; const hpPct = clamp((p.hp / p.maxHp)*100,0,100);
+    refs.playerHpFill.style.width = `${hpPct}%`; refs.playerHpSmall.textContent = `${p.hp} / ${p.maxHp}`; refs.playerAttackValue.textContent = p.attack; refs.playerLevel.textContent = p.level; refs.playerXpText.textContent = `${p.xp} / ${p.xpToNext}`; refs.playerXpFill.style.width = `${clamp((p.xp / p.xpToNext)*100, 0, 100)}%`;
+    document.getElementById("player-crit").textContent = `${Math.round(p.crit*10)/10}%`; document.getElementById("player-dodge").textContent = `${Math.round(p.dodge*10)/10}%`;
+    refs.slotWeapon.querySelector("span").textContent = state.equipment.Weapon ? `${state.equipment.Weapon.name} (+${state.equipment.Weapon.power})` : "(empty)";
+    refs.slotArmor.querySelector("span").textContent = state.equipment.Armor ? `${state.equipment.Armor.name} (+${state.equipment.Armor.power})` : "(empty)";
+    refs.slotAccessory.querySelector("span").textContent = state.equipment.Accessory ? `${state.equipment.Accessory.name} (+${state.equipment.Accessory.power})` : "(empty)";
+    document.getElementById("current-zone").textContent = ZONES[state.zoneIndex].name;
+    applyZoneBackground(); updateAcesUI(); showCompanions(); renderPlayerStatuses();
+  }
+  function renderPlayerStatuses(){
+    if(!state.statusEffects.player || state.statusEffects.player.length === 0){ refs.playerStatusList.textContent = "Healthy"; return; }
+    refs.playerStatusList.innerHTML = state.statusEffects.player.map(s => `${s.type} (${s.duration})`).join(" • ");
+  }
+
+  /* =====================
+     Queue/Spawn
+     ===================== */
+  function initQueue(){ state.monsterQueue = []; for(let i=0;i<5;i++) state.monsterQueue.push(generateMonster()); renderQueue(); }
+  function spawnNextMonster(){ const next = state.monsterQueue[0]; state.currentMonster = next; renderMonster(next); log(`A ${next.rarity} ${next.name} appears!`); }
+  function renderQueue(){ refs.monsterQueue.innerHTML = ""; state.monsterQueue.forEach(m=>{ const q=document.createElement("div"); q.className="queue-card "+rarityClass(m.rarity); q.textContent=`${m.name} (${m.rarity})`; refs.monsterQueue.appendChild(q); }); }
+
+  /* =====================
+     Monster generation (scaled)
+     ===================== */
+  function generateMonster(isBoss=false){
+    const tmp = MONSTER_TEMPLATES[randInt(0,MONSTER_TEMPLATES.length-1)];
+    const weights = rarityWeightsForPlayer(); const rarity = chooseWeighted(weights); const rIdx = RARITIES.indexOf(rarity);
+    const zoneBoost = ZONES[state.zoneIndex].monsterBoost; const pl = state.player.level;
+    const hpBase = (isBoss?180:28)+randInt(0,18)+rIdx*16+zoneBoost*12+Math.floor(pl*1.4)+(isBoss?90:0);
+    const atkBase = (isBoss?26:6)+randInt(0,6)+Math.floor(rIdx*2.0)+Math.floor(zoneBoost*1.6)+Math.floor(pl*0.25)+(isBoss?10:0);
+    const name = (isBoss? "Boss ":"") + tmp.name + (rIdx>=6? " " + ["of Doom","the Fierce","Alpha"][randInt(0,2)] : "");
+    const abilities = []; if(isBoss || randInt(1,100) <= (12 + rIdx*3)) abilities.push(["heal","enrage","shield","double-hit"][randInt(0,3)]);
+    return { id: tmp.id + "-" + Math.random().toString(36).slice(2,7), name, rarity, maximumHp:hpBase, hp:hpBase, attack:Math.max(1,atkBase), abilities, isBoss:!!isBoss };
+  }
+  function rarityWeightsForPlayer(){ const weights = {...BASE_RARITY_WEIGHTS}; const lvl = state.player.level; const luck = state.player.skills.luck||0; const levelFactor = 1 + Math.min(0.75, lvl*0.01); const luckFactor = 1 + luck*0.06; RARITIES.forEach((r, idx)=>{ if(idx>=2) weights[r] = Math.max(1, Math.round(weights[r] * (1 + (idx-1)*0.06*levelFactor*luckFactor))); else weights[r] = Math.max(1, Math.round(weights[r] / (1 + 0.02*lvl))); }); return weights; }
+
+  /* =====================
+     Stats recalculation & enchant application
+     ===================== */
+  function recalcStats(){
+    const p = state.player; p.baseAttack = Math.floor(16 + p.skills.attack * 2 + p.level * 0.5); p.baseMaxHp = Math.floor(120 + p.skills.defense * 12 + p.level * 6);
+    let bonusAtk = 0, bonusHp = 0;
+    for(const s in state.equipment){ const it = state.equipment[s]; if(!it) continue; if(it.slot==="Weapon") bonusAtk += Math.floor(it.power * 0.6); if(it.slot==="Armor") bonusHp += Math.floor(it.power * 2.0); if(it.slot==="Accessory"){ bonusAtk += Math.floor(it.power * 0.3); bonusHp += Math.floor(it.power * 0.8); } }
+    // enchantment percent bonuses on equipped items
+    for(const s of Object.keys(state.equipment)){
+      const it = state.equipment[s]; if(!it) continue;
+      const ench = state.enchantments[it.id] || [];
+      ench.forEach(e=>{
+        if(e.type==='atk%') bonusAtk += Math.floor(p.baseAttack * (e.value/100));
+        if(e.type==='def%') bonusHp += Math.floor(p.baseMaxHp * (e.value/100));
+        if(e.type==='dmg%') bonusAtk += Math.floor(it.power * (e.value/100));
+      });
+    }
+    p.attack = Math.max(1, Math.floor(p.baseAttack + bonusAtk)); p.maxHp = Math.max(1, Math.floor(p.baseMaxHp + bonusHp));
+    p.crit = 5 + (p.skills.luck * 0.9); p.dodge = 3 + (p.skills.defense * 0.7); p.hp = clamp(p.hp, 0, p.maxHp);
+  }
+
+  /* =====================
+     Logging & save wrappers
+     ===================== */
+  function log(txt){ const d=document.createElement("div"); d.textContent = txt; refs.combatLog.prepend(d); }
+  function saveState(){ state.lastSaved = nowMs(); state.lastActive = nowMs(); localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
+
+  /* =====================
+     Controls binding
+     ===================== */
+  function bindControls(){
+    refs.attackBtn.addEventListener("click", ()=> playerAttack(false));
+    refs.specialBtn.addEventListener("click", ()=> playerAttack(true));
+    refs.fleeBtn.addEventListener("click", ()=> { if(!state.currentMonster) return; log("You fled. Small penalty."); state.player.hp = Math.max(1, state.player.hp - randInt(4,10)); state.currentMonster = null; state.monsterQueue.shift(); state.monsterQueue.push(generateMonster()); renderQueue(); spawnNextMonster(); updateUI(); saveState(); });
+    refs.merchantRefresh.addEventListener("click", ()=> { refreshMerchant(); log("Merchant refreshed."); saveState(); });
+    refs.openEnchantBtn.addEventListener("click", ()=> openEnchant());
+    refs.enchantCancel.addEventListener("click", ()=> refs.enchantModal.classList.add("hidden"));
+    refs.enchantConfirm.addEventListener("click", ()=> confirmEnchant());
+    refs.dailyClaim.addEventListener("click", ()=> claimDailyReward());
+    refs.recruitBtn.addEventListener("click", ()=> recruitRandomCompanion());
+  }
+
+  /* =====================
+     Disable controls helper
+     ===================== */
+  function disableControls(flag){ [refs.attackBtn, refs.specialBtn, refs.fleeBtn].forEach(b => b.disabled = !!flag); }
+
+  /* =====================
+     Idle / Offline progression (generous)
+     - 1 hour => ~5 battles worth of rewards
+     ===================== */
+  function grantIdleRewardsFromSave(){
+    const last = state.lastActive || state.lastSaved || nowMs();
+    const elapsedHours = (nowMs() - last) / 3600000;
+    if(elapsedHours < 0.016) return; // less than ~1 minute
+    const battles = Math.floor(elapsedHours * 5); // generous: 1h ~= 5 battles
+    if(battles <= 0) return;
+    // simulate simple rewards: XP and aces proportional to battles
+    const xpPerBattle = 30 + state.player.level * 6;
+    const xpGain = battles * xpPerBattle;
+    const acesGain = Math.max(0, Math.floor(battles * 0.5)); // average half an ace value per battle
+    grantXp(xpGain);
+    addAcesValue(acesGain * 10); // convert to simple value (10 units each)
+    showPopup(`While you were away: +${xpGain} XP, +${acesGain} value`);
+    spawnParticles(window.innerWidth/2, window.innerHeight/2, '#bde1ff', 26);
+    log(`Idle: ${battles} battles simulated while away.`);
+  }
+
+  /* =====================
+     Daily rewards & streak
+     ===================== */
+  function checkDailyOnLoad(){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const last = state.daily.lastLogin ? new Date(state.daily.lastLogin) : null;
+    if(!last || (new Date(last).setHours(0,0,0,0) < today.getTime())){
+      // a new day
+      // decide reward tier by streak
+      const newStreak = (state.daily.lastLogin && ((today.getTime() - new Date(state.daily.lastLogin).setHours(0,0,0,0)) === 86400000)) ? (state.daily.streak + 1) : 1;
+      state.daily.streak = newStreak;
+      state.daily.pending = generateDailyReward(newStreak);
+      // show modal
+      openDailyModal(state.daily.pending, newStreak);
+    } else {
+      // same day or already claimed
+      // nothing
+    }
+  }
+  function generateDailyReward(streak){
+    // simple mapping (can be expanded)
+    if(streak >= 7) return {type:"ace",value:100,desc:"Epic reward! 2 ♥ or 1 ♠ equivalent"}; // big
+    if(streak >= 5) return {type:"item", rarity:"Rare",desc:"Rare item"}; 
+    if(streak >= 3) return {type:"ace",value:50,desc:"1 ♥ Ace value"};
+    return {type:"ace",value:10,desc:"♣ Ace"};
+  }
+  function openDailyModal(reward, streak){
+    refs.dailyContent.innerHTML = `<div class="small">Day ${streak} streak</div><div style="margin-top:8px">${reward.desc}</div>`;
+    refs.dailyModal.classList.remove("hidden");
+  }
+  function claimDailyReward(){
+    const r = state.daily.pending;
+    if(!r){ refs.dailyModal.classList.add("hidden"); return; }
+    if(r.type === "ace"){ addAcesValue(r.value); showPopup(`+${r.value} value (Daily)`); }
+    else if(r.type === "item"){ const it = makeItem(r.rarity||"Rare"); state.loot.push(it); log(`Daily reward: ${it.name}`); }
+    state.daily.lastClaim = nowMs();
+    state.daily.lastLogin = nowMs();
+    saveState(); refs.dailyModal.classList.add("hidden");
+    renderLoot(); updateUI();
+  }
+
+  /* =====================
+     Start / Init / helpers
+     ===================== */
+  function start(){
+    recalcStats(); applyZoneBackground();
+    if(!state.monsterQueue || state.monsterQueue.length === 0) initQueue();
+    refreshMerchant(); renderQueue();
+    if(!state.currentMonster) spawnNextMonster(); else renderMonster(state.currentMonster);
+    renderLoot(); bindControls(); updateUI(); showCompanions();
+    // grant idle rewards if away
+    grantIdleRewardsFromSave();
+    // daily check & modal
+    checkDailyOnLoad();
+    saveState();
+    log("Game started — full build loaded.");
+  }
+
+  /* =====================
+     Helper public & debug
+     ===================== */
+  window.NRPG = {
+    state, saveState, refreshMerchant, trySpendAces, addAcesValue, recruitRandomCompanion
+  };
+
+  // Start the game
+  start();
+
+})();
