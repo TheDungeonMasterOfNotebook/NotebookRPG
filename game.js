@@ -1,597 +1,555 @@
-/* ===========================
-   Notebook RPG — Updated game.js
-   - Turn-based combat & enemy pool
-   - Working Inventory & Merchant UIs
-   - Dungeon crawl triggers real battles
-   - Aces currency spending/conversion
-   - Saves to localStorage "notebookSave"
-   =========================== */
+/* Notebook RPG — single-file game core (modern UI) 
+   - save key: "notebookSave"
+   - inline creation controlled by index.html
+   - turn-based combat, inventory, merchant, enchant, aces, biomes, admin
+*/
 
 (() => {
-  // ---------- Config ----------
   const SAVE_KEY = "notebookSave";
-  const ACE_VALUES = { Spades: 100, Hearts: 50, Diamonds: 25, Clubs: 10 }; // value per card
-  const ENEMY_POOL = [
-    // common
-    { id:'goblin', name:'Goblin Grunt', hp:30, atk:6, def:1, rarity:'Common', special:null },
-    { id:'wolf', name:'Wild Wolf', hp:28, atk:7, def:0, rarity:'Common', special:null },
-    // uncommon
-    { id:'bandit', name:'Bandit', hp:45, atk:9, def:2, rarity:'Uncommon', special:'bleed' },
-    { id:'sentry', name:'Stone Sentry', hp:50, atk:8, def:4, rarity:'Uncommon', special:'shield' },
-    // rare
-    { id:'fire_imp', name:'Fire Imp', hp:60, atk:11, def:2, rarity:'Rare', special:'burn' },
-    { id:'ice_hound', name:'Ice Hound', hp:65, atk:10, def:3, rarity:'Rare', special:'slow' },
-    // epic
-    { id:'orc_warchief', name:'Orc Warchief', hp:100, atk:18, def:6, rarity:'Epic', special:'rage' },
-    { id:'venom_spider', name:'Venom Spider', hp:80, atk:14, def:2, rarity:'Epic', special:'poison' },
-    // boss (example)
-    { id:'crypt_lord', name:'Crypt Lord', hp:220, atk:28, def:8, rarity:'Boss', special:'curse' }
-  ];
+  const ACE_VALUES = { Spades: 100, Clubs: 10, Diamonds: 25, Hearts: 50 };
 
-  // DOM refs (assumes elements exist; create backup nodes if not)
+  /* ---------------- DOM shorthand ---------------- */
   const $ = (s) => document.querySelector(s);
+  const gameRoot = $('#gameRoot');
+  const creationRoot = $('#creationRoot');
+  const classListEl = $('#classList');
   const gameUI = $('#gameUI');
-  const floatLayer = $('#floatLayer') || (function(){const d=document.createElement('div');d.id='floatLayer';document.body.appendChild(d);return d;})();
-  const modalContainer = $('#modalContainer') || (function(){const d=document.createElement('div');d.id='modalContainer';document.body.appendChild(d);return d;})();
-  const biomeBg = $('#biomeBackground') || (function(){const d=document.createElement('div');d.id='biomeBackground';document.body.appendChild(d);return d;})();
-  const particleLayer = $('#particleLayer') || (function(){const d=document.createElement('div');d.id='particleLayer';document.body.appendChild(d);return d;})();
+  const floatLayer = $('#floatLayer');
+  const modalRoot = $('#modalContainer');
+  const biomeBg = $('#biomeBackground');
+  const particleLayer = $('#particleLayer');
+  const adminPanel = $('#adminPanel');
 
-  // ---------- Save / Load ----------
-  function saveGame() {
-    if (!player) return;
-    localStorage.setItem(SAVE_KEY, JSON.stringify(player));
+  /* ---------------- Classes (same mapping used by creator) ---------------- */
+  const CLASS_DEFS = {
+    Knight: { hp: 120, atk: 10, def: 10, spd: 5, trait: "Extra armor on start" },
+    Rogue: { hp: 90, atk: 12, def: 6, spd: 12, trait: "Higher crit chance" },
+    Mage: { hp: 80, atk: 16, def: 4, spd: 8, trait: "Bonus magic damage" },
+    Ranger: { hp: 100, atk: 11, def: 6, spd: 10, trait: "High accuracy" },
+    Cleric: { hp: 95, atk: 8, def: 8, spd: 7, trait: "Self-heal every 3 turns" },
+    Berserker: { hp: 110, atk: 14, def: 5, spd: 9, trait: "More damage at low HP" },
+    Necromancer: { hp: 85, atk: 10, def: 5, spd: 7, trait: "Summon on win (mini)" },
+    Paladin: { hp: 115, atk: 11, def: 9, spd: 6, trait: "Light resist" }
+  };
+
+  /* ---------------- Utility & UI helpers ---------------- */
+  function floatPopup(text, tone='gold') {
+    const el = document.createElement('div');
+    el.className = 'floatText ' + (tone === 'green' ? 'green' : tone === 'red' ? 'red' : 'gold');
+    el.textContent = text;
+    el.style.left = `${15 + Math.random() * 70}%`;
+    el.style.top = `${30 + Math.random() * 40}%`;
+    floatLayer.appendChild(el);
+    setTimeout(()=> el.remove(), 1400);
   }
-  function loadGame() {
+
+  function showModal(title, html, onClose) {
+    modalRoot.style.display = 'flex';
+    modalRoot.innerHTML = `<div class="modalInner"><h3 style="margin-bottom:8px">${title}</h3>${html}<div style="margin-top:12px;text-align:right"><button id="modalOk" class="btn primary">OK</button></div></div>`;
+    $('#modalOk').onclick = () => { modalRoot.style.display = 'none'; modalRoot.innerHTML = ''; if (onClose) onClose(); };
+  }
+  function closeModal(){ modalRoot.style.display = 'none'; modalRoot.innerHTML = ''; }
+
+  function savePlayer(p) { localStorage.setItem(SAVE_KEY, JSON.stringify(p)); }
+  function loadPlayer() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       return JSON.parse(raw);
-    } catch (e) { return null; }
+    } catch(e){ return null; }
+  }
+  function coinsFromValue(total) {
+    total = Math.max(0, Math.floor(total));
+    const out = { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
+    const order = ['Spades','Hearts','Diamonds','Clubs'];
+    for (const k of order) { out[k] = Math.floor(total / ACE_VALUES[k]); total = total % ACE_VALUES[k]; }
+    return out;
+  }
+  function totalAcesVal(aces) {
+    aces = aces || { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
+    return (aces.Spades||0)*ACE_VALUES.Spades + (aces.Hearts||0)*ACE_VALUES.Hearts + (aces.Diamonds||0)*ACE_VALUES.Diamonds + (aces.Clubs||0)*ACE_VALUES.Clubs;
   }
 
-  // ---------- Player initialization ----------
-  let player = loadGame();
-  // If no save, the index.html's character creation calls startGame() which sets player.
-  // If there's a save, ensure required fields exist:
-  function normalizePlayer(p) {
-    p.acesset = p.acesset || {}; // no-op fallback
+  /* ---------------- Default enemy pool ---------------- */
+  const ENEMIES = [
+    { id:'goblin', name:'Goblin', hp:28, atk:6, def:1, behavior:null },
+    { id:'wolf', name:'Wild Wolf', hp:30, atk:7, def:0, behavior:null },
+    { id:'bandit', name:'Bandit', hp:44, atk:9, def:2, behavior:'bleed' },
+    { id:'imp', name:'Fire Imp', hp:58, atk:11, def:2, behavior:'burn' },
+    { id:'orc', name:'Orc', hp:88, atk:14, def:4, behavior:'heavy' },
+    { id:'specter', name:'Specter', hp:70, atk:12, def:3, behavior:'drain' },
+    { id:'chieftain', name:'Warchief', hp:140, atk:22, def:7, behavior:'enrage' },
+    { id:'cryptlord', name:'Crypt Lord', hp:260, atk:34, def:10, behavior:'curse' }
+  ];
+
+  /* ---------------- Player / state ---------------- */
+  let player = null;
+  let combat = null; // {enemy, state:'player'|'enemy'}
+
+  /* Load or show creation */
+  const saved = loadPlayer();
+  if (saved) {
+    player = normalizeLoadedPlayer(saved);
+    enterGame();
+  } else {
+    showCreationUI();
+  }
+
+  /* ---------------- Creation UI wiring ---------------- */
+  function showCreationUI() {
+    creationRoot.classList.remove('hidden');
+    gameRoot.classList.add('hidden');
+    // render class cards
+    classListEl.innerHTML = '';
+    Object.keys(CLASS_DEFS).forEach(key => {
+      const def = CLASS_DEFS[key];
+      const card = document.createElement('div');
+      card.className = 'classCard';
+      card.innerHTML = `<div style="font-weight:700">${key}</div><div class="small">${def.trait}</div><div class="small" style="margin-top:6px">HP ${def.hp} • ATK ${def.atk} • DEF ${def.def}</div>`;
+      card.addEventListener('click', ()=> {
+        document.querySelectorAll('.classCard').forEach(c=>c.classList.remove('selected'));
+        card.classList.add('selected');
+        chosenClass = key;
+      });
+      classListEl.appendChild(card);
+    });
+  }
+
+  let chosenClass = null;
+  $('#beginAdventure').addEventListener('click', () => {
+    const name = ($('#charName').value || '').trim();
+    const emoji = ($('#charEmoji').value || '').trim();
+    if (!name) return alert('Enter a name.');
+    if (!chosenClass) return alert('Pick a class.');
+    // build player
+    const def = CLASS_DEFS[chosenClass];
+    player = {
+      name,
+      emoji: emoji || '',
+      className: chosenClass,
+      level: 1,
+      xp: 0,
+      nextXP: Math.max(100, Math.floor(120 * Math.pow(1, 1.5))),
+      hp: def.hp, maxHP: def.hp,
+      atk: def.atk, defStat: def.def, spd: def.spd,
+      crit: chosenClass === 'Rogue' ? 13 : 6,
+      aces: { Spades:0, Hearts:0, Diamonds:0, Clubs:0 },
+      inventory: [],
+      equipment: { Weapon:null, Armor:null, Accessory:null },
+      status: []
+    };
+    savePlayer(player);
+    enterGame();
+  });
+
+  $('#loadSaveBtn').addEventListener('click', () => {
+    const s = loadPlayer();
+    if (!s) return alert('No save found.');
+    player = normalizeLoadedPlayer(s);
+    enterGame();
+  });
+
+  function normalizeLoadedPlayer(p) {
     p.aces = p.aces || { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
     p.inventory = p.inventory || [];
     p.equipment = p.equipment || { Weapon:null, Armor:null, Accessory:null };
     p.status = p.status || [];
     p.level = p.level || 1;
-    p.xp = p.xp || 0;
     p.nextXP = p.nextXP || Math.max(100, Math.floor(120 * Math.pow(p.level, 1.5)));
+    p.hp = Math.min(p.maxHP || 100, p.hp || (p.maxHP || 100));
     p.maxHP = p.maxHP || p.hp || 100;
-    p.hp = p.hp || p.maxHP;
-    p.atk = p.atk || 10;
-    p.def = p.def || 5;
-    p.crit = p.crit || 5;
     return p;
   }
-  if (player) player = normalizePlayer(player);
 
-  // ---------- Utility helpers ----------
-  function floatText(text, cls='gold') {
-    const el = document.createElement('div');
-    el.className = `floatText ${cls}`;
-    el.textContent = text;
-    el.style.left = `${10 + Math.random()*80}%`;
-    el.style.top = `${30 + Math.random()*40}%`;
-    floatLayer.appendChild(el);
-    setTimeout(()=> el.remove(), 1500);
-  }
-
-  function totalAcesValue(aces) {
-    aces = aces || player?.aces || { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
-    return (aces.Spades||0)*ACE_VALUES.Spades + (aces.Hearts||0)*ACE_VALUES.Hearts + (aces.Diamonds||0)*ACE_VALUES.Diamonds + (aces.Clubs||0)*ACE_VALUES.Clubs;
-  }
-
-  // Convert a raw value into coin counts (greedy descending)
-  function coinsFromValue(total) {
-    const out = { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
-    let rem = Math.floor(total);
-    const order = ['Spades','Hearts','Diamonds','Clubs'];
-    for (let k of order) {
-      out[k] = Math.floor(rem / ACE_VALUES[k]);
-      rem = rem % ACE_VALUES[k];
+  /* ---------------- Enter game (after create/load) ---------------- */
+  function enterGame() {
+    creationRoot.classList.add('hidden');
+    gameRoot.classList.remove('hidden');
+    updateMainUI();
+    updateBiome();
+    spawnParticles();
+    // wire admin hotkey and buttons
+    window.addEventListener('keydown', (e) => { if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') toggleAdmin(); });
+    if ($('#adminSave')) {
+      $('#adminSave').addEventListener('click', () => { applyAdminChanges(); });
+      $('#spawnLoot').addEventListener('click', ()=> { player.inventory.push(randomLoot()); updateMainUI(); savePlayer(player); });
+      $('#addXP').addEventListener('click', ()=> { player.xp += 100; floatPopup('+100 XP','green'); checkLevelUp(); savePlayer(player); updateMainUI(); });
+      $('#healFull').addEventListener('click', ()=> { player.hp = player.maxHP; savePlayer(player); updateMainUI(); });
+      $('#resetGame').addEventListener('click', ()=> { if(confirm('Reset save?')) { localStorage.removeItem(SAVE_KEY); location.reload(); } });
     }
-    return out;
   }
 
-  // Try spend a value (in ace value). Returns true if spent.
-  function spendAces(value) {
-    const current = totalAcesValue(player.aces);
-    if (current < value) return false;
-    const newCoins = coinsFromValue(current - value);
-    player.aces = newCoins;
-    saveGame();
-    return true;
-  }
-
-  function addAcesValue(value) {
-    const total = totalAcesValue(player.aces) + Math.floor(value);
-    player.aces = coinsFromValue(total);
-    saveGame();
-  }
-
-  // ---------- Inventory & Merchant UI ----------
-  function openInventory() {
-    const inv = player.inventory || [];
-    if (inv.length === 0) {
-      showModal("Inventory", "<div class='small'>Empty</div>");
-      return;
+  function toggleAdmin(){
+    if(!adminPanel) return;
+    adminPanel.classList.toggle('hidden');
+    if(!adminPanel.classList.contains('hidden')) {
+      $('#adminName').value = player.name || '';
+      $('#adminLevel').value = player.level || 1;
+      $('#adminXP').value = player.xp || 0;
+      $('#adminHP').value = player.hp || player.maxHP || 100;
+      $('#adminAces').value = totalAcesVal(player.aces);
     }
-    let html = `<div style="display:flex;flex-direction:column;gap:8px">`;
-    inv.forEach((it, idx) => {
-      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid #333;border-radius:8px">
-        <div><strong>${it.name}</strong><div class="small">${it.desc || it.slot || ''}</div></div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          ${it.usable ? `<button onclick="useItem(${idx})">Use</button>` : ''}
-          ${it.slot ? `<button onclick="equipItem(${idx})">Equip</button>` : ''}
-          <button onclick="sellItem(${idx})">Sell</button>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
-    showModal("Inventory", html);
   }
-  window.useItem = function(index) {
-    const it = player.inventory[index];
-    if (!it) return;
-    if (it.type === 'potion') {
-      player.hp = Math.min(player.maxHP, player.hp + (it.power||50));
-      floatText(`Healed ${it.power||50}`, 'green');
-      player.inventory.splice(index,1);
-      saveGame(); updateMainUI(); closeModal();
-    } else {
-      floatText("Can't use that right now", 'red');
-    }
-  };
-  window.equipItem = function(index) {
-    const it = player.inventory[index];
-    if (!it) return;
-    const slot = it.slot || 'Accessory';
-    // place item in equipment (simplified)
-    const old = player.equipment[slot] || null;
-    player.equipment[slot] = it;
-    // quick stat adjust: if weapon -> atk, armor->maxHP
-    if (slot === 'Weapon') player.atk += Math.floor((it.power||5)/2);
-    if (slot === 'Armor') { player.maxHP += (it.power||10); player.hp += (it.power||10); }
-    player.inventory.splice(index,1);
-    floatText(`Equipped ${it.name}`, 'gold');
-    saveGame(); updateMainUI(); closeModal();
-  };
-  window.sellItem = function(index) {
-    const it = player.inventory[index];
-    if (!it) return;
-    const val = Math.max(5, Math.floor((it.power||10) * (it.valueMultiplier||1)));
-    addAcesValue(val);
-    player.inventory.splice(index,1);
-    floatText(`Sold for ${val} value`, 'gold');
-    saveGame(); updateMainUI(); closeModal();
-  };
-
-  function openMerchant() {
-    // Offer 3 random items + enchant option
-    let html = `<div class="small">Merchant offers (prices are value):</div><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">`;
-    const offers = [];
-    for (let i=0;i<3;i++){
-      const it = randomLoot();
-      const price = Math.max(10, Math.floor((it.power||10) * (5 + Math.random()*6)));
-      offers.push({ it, price });
-      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px;border:1px solid #333;border-radius:8px">
-        <div><strong>${it.name}</strong><div class="small">${it.rarity} • ${it.slot||''}</div></div>
-        <div style="text-align:right"><div class="small">${price} value</div><button onclick="buyOffer(${i})">Buy</button></div>
-      </div>`;
-    }
-    html += `</div><div style="margin-top:8px"><button onclick="openEnchantMenu()">Open Enchantments</button></div>`;
-    showModal("Merchant", html);
-    // store offers in temp place
-    player._merchantOffers = offers;
-    saveGame();
+  function applyAdminChanges(){
+    player.name = $('#adminName').value || player.name;
+    player.level = Math.max(1, parseInt($('#adminLevel').value)||player.level);
+    player.xp = parseInt($('#adminXP').value)||player.xp;
+    player.hp = Math.min(player.maxHP, parseInt($('#adminHP').value)||player.hp);
+    const val = parseInt($('#adminAces').value) || totalAcesVal(player.aces);
+    player.aces = coinsFromValue(val);
+    savePlayer(player); updateMainUI(); floatPopup('Admin saved','green');
   }
-  window.buyOffer = function(index) {
-    const offers = player._merchantOffers || [];
-    const offer = offers[index];
-    if (!offer) return;
-    if (!spendAces(offer.price)) { floatText("Not enough Aces", 'red'); return; }
-    player.inventory.push(offer.it);
-    floatText(`Bought ${offer.it.name}`, 'gold');
-    saveGame(); updateMainUI(); closeModal();
-  };
 
-  // Enchanting (simplified) — opens a small menu
-  function openEnchantMenu() {
-    const pool = [
-      { id:'burn', name:'Burn Rune', cost:120, desc:'Chance to burn on hit' },
-      { id:'poison', name:'Poison Rune', cost:110, desc:'Chance to poison' },
-      { id:'lifesteal', name:'Vampiric Rune', cost:180, desc:'Steal some HP on hit' }
-    ];
-    let html = `<div class="small">Use Aces value to enchant a weapon (weapon required)</div><div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px">`;
-    pool.forEach((p, i) => {
-      html += `<div style="padding:8px;border:1px solid #333"><strong>${p.name}</strong><div class="small">${p.desc}</div><div class="small">Cost: ${p.cost}</div><div style="margin-top:6px"><button onclick="applyRune(${i})">Apply Rune</button></div></div>`;
-    });
-    html += `</div>`;
-    showModal("Enchantment", html);
-    player._runePool = pool;
-    saveGame();
+  /* ---------------- Main UI rendering ---------------- */
+  function updateMainUI() {
+    if (combat) { renderCombatUI(); return; }
+    const aceVal = totalAcesVal(player.aces);
+    $('#playerBadge').textContent = `${player.emoji || ''} ${player.name}`;
+    gameUI.innerHTML = `
+      <div class="small">Class: ${player.className} • Lvl ${player.level}</div>
+      <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+        <div><strong>HP</strong><div>${player.hp}/${player.maxHP}</div></div>
+        <div><strong>ATK</strong><div>${player.atk}</div></div>
+        <div><strong>DEF</strong><div>${player.defStat}</div></div>
+        <div><strong>XP</strong><div>${player.xp}/${player.nextXP}</div></div>
+        <div><strong>Aces</strong><div>${aceVal} (♠${player.aces.Spades||0} ♥${player.aces.Hearts||0} ♦${player.aces.Diamonds||0} ♣${player.aces.Clubs||0})</div></div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn primary" id="btnExplore">Explore Dungeon</button>
+        <button class="btn" id="btnMerchant">Merchant</button>
+        <button class="btn" id="btnInventory">Inventory</button>
+        <button class="btn" id="btnEnchant">Enchant</button>
+        <button class="btn" id="btnSave">Save</button>
+      </div>
+    `;
+    $('#btnExplore').onclick = ()=> exploreDungeon();
+    $('#btnMerchant').onclick = ()=> openMerchant();
+    $('#btnInventory').onclick = ()=> openInventory();
+    $('#btnEnchant').onclick = ()=> openEnchant();
+    $('#btnSave').onclick = ()=> { savePlayer(player); floatPopup('Saved','green'); };
   }
-  window.applyRune = function(i) {
-    const pool = player._runePool || [];
-    const rune = pool[i];
-    if (!rune) return;
-    if (!spendAces(rune.cost)) { floatText("Not enough Aces", 'red'); return; }
-    const w = player.equipment.Weapon;
-    if (!w) { floatText("No weapon equipped", 'red'); return; }
-    w.runes = w.runes || [];
-    w.runes.push(rune.id);
-    floatText(`Applied ${rune.name} to ${w.name}`, 'gold');
-    saveGame(); closeModal(); updateMainUI();
-  };
 
-  // ---------- Dungeon & Combat ----------
-  let combatState = null; // { enemy, turn: 'player'|'enemy' }
-
-  function exploreDungeon() {
-    // pick an event: 60% enemy (combat), 20% chest, 10% merchant, 10% trap/rest
+  /* ---------------- Dungeon & Events ---------------- */
+  function exploreDungeon(){
+    // 60% combat, 20% chest, 10% merchant, 10% trap/rest
     const r = Math.random();
     if (r < 0.6) {
-      startCombat(randomEnemyByDepth());
+      startCombat(randomEnemy());
     } else if (r < 0.8) {
-      // chest
       const r2 = Math.random();
-      if (r2 < 0.66) {
-        const loot = randomLoot();
-        player.inventory.push(loot);
-        floatText(`Found ${loot.name}`, 'green');
-        saveGame();
+      if (r2 < 0.65) {
+        const loot = randomLoot(); player.inventory.push(loot); floatPopup(`Found: ${loot.name}`, 'gold');
       } else {
-        const val = 10 + Math.floor(Math.random()*60);
-        addAcesValue(val);
-        floatText(`Found ${val} Ace value`, 'gold');
+        const val = 10 + Math.floor(Math.random()*60); addAcesValue(val); floatPopup(`Found ${val} value`, 'gold');
       }
-      updateMainUI();
+      savePlayer(player); updateMainUI();
     } else if (r < 0.9) {
       openMerchant();
     } else {
-      const dmg = Math.max(5, Math.floor(player.maxHP * 0.12));
-      player.hp = Math.max(1, player.hp - dmg);
-      floatText(`Trap! -${dmg} HP`, 'red');
-      if (player.hp <= 0) {
-        playerDeath();
-      }
-      saveGame(); updateMainUI();
+      const dmg = Math.max(5, Math.floor(player.maxHP * 0.12)); player.hp = Math.max(1, player.hp - dmg);
+      floatPopup(`Trap: -${dmg} HP`, 'red'); if (player.hp <= 0) playerDeath();
+      savePlayer(player); updateMainUI();
     }
   }
 
-  function randomEnemyByDepth() {
-    // depth influence: scale hp/atk by player level
-    const base = ENEMY_POOL[Math.floor(Math.random()*ENEMY_POOL.length)];
-    const scale = 1 + Math.min(6, (player.level - 1) * 0.08);
+  function randomEnemy() {
+    const base = ENEMIES[Math.floor(Math.random()*ENEMIES.length)];
+    const scale = 1 + Math.min(6, (player.level - 1)*0.06);
     return {
-      id: base.id,
-      name: base.name,
-      hp: Math.max(10, Math.round(base.hp * scale)),
-      maxHp: Math.max(10, Math.round(base.hp * scale)),
-      atk: Math.max(1, Math.round(base.atk * scale)),
-      def: base.def || 0,
-      rarity: base.rarity || 'Common',
-      special: base.special || null
+      id: base.id, name: base.name, hp: Math.max(10, Math.round(base.hp * scale)),
+      maxHp: Math.max(10, Math.round(base.hp * scale)), atk: Math.max(1, Math.round(base.atk * scale)),
+      def: base.def||0, behavior: base.behavior || null
     };
   }
 
+  /* ---------------- Combat core (turn-based) ---------------- */
   function startCombat(enemy) {
-    combatState = { enemy, turn: 'player' };
-    renderCombatScreen();
-    saveGame();
+    combat = { enemy, phase: 'player' };
+    renderCombatUI();
   }
 
-  function renderCombatScreen() {
-    if (!combatState) return updateMainUI();
-    const e = combatState.enemy;
-    gameUI.innerHTML = `<div class="panel"><h2>⚔️ ${e.name} (${e.rarity})</h2>
-      <div id="combatText" class="small" style="min-height:48px;margin-bottom:8px">Battle in progress</div>
-      <div><strong>Player</strong> — HP: ${player.hp}/${player.maxHP} | ATK: ${player.atk} | DEF: ${player.def}</div>
-      <div style="margin-top:8px"><strong>Enemy</strong> — HP: <span id="enemyHP">${e.hp}</span> / ${e.maxHp}</div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button id="actAttack">Attack</button>
-        <button id="actSkill">Skill</button>
-        <button id="actItem">Item</button>
-        <button id="actFlee">Flee</button>
+  function renderCombatUI() {
+    if (!combat) return updateMainUI();
+    const e = combat.enemy;
+    gameUI.innerHTML = `
+      <div class="card">
+        <h3>Encounter — ${e.name}</h3>
+        <div class="small">Enemy HP: <span id="enemyHP">${e.hp}</span>/<span>${e.maxHp}</span></div>
+        <div style="margin-top:10px"><strong>You</strong> — HP ${player.hp}/${player.maxHP}</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="attackBtn">Attack</button>
+          <button class="btn" id="skillBtn">Skill</button>
+          <button class="btn" id="itemBtn">Item</button>
+          <button class="btn" id="fleeBtn">Flee</button>
+        </div>
+        <div style="margin-top:10px" id="combatLog" class="small muted"></div>
       </div>
-      <div style="margin-top:8px"><div id="playerStatusBar" class="status-bar"></div><div id="enemyStatusBar" class="status-bar"></div></div>
-    </div>`;
-    $('#actAttack').onclick = playerAttack;
-    $('#actSkill').onclick = playerSkill;
-    $('#actItem').onclick = ()=> { openInventory(); };
-    $('#actFlee').onclick = playerFlee;
-    updateStatusBars();
+    `;
+    $('#attackBtn').onclick = playerAttack;
+    $('#skillBtn').onclick = playerSkill;
+    $('#itemBtn').onclick = ()=> { openInventory(); };
+    $('#fleeBtn').onclick = playerFlee;
   }
 
   function playerAttack() {
-    if (!combatState) return;
-    const e = combatState.enemy;
-    // tick status effects start-of-turn
-    tickStatuses(player);
-    tickStatuses(e);
-    if (player.stunned || player.frozen) { floatText("You cannot act!", 'red'); enemyTurn(); return; }
-    // compute damage
-    let base = Math.max(1, player.atk - Math.floor(e.def * 0.5) + Math.floor(Math.random()*6));
+    if (!combat) return;
+    tickStatuses(player); tickStatuses(combat.enemy);
+    if (player.stunned || player.frozen) { floatPopup("You can't act", 'red'); return enemyAct(); }
+    let dmg = Math.max(1, player.atk - Math.floor((combat.enemy.def||0)*0.4) + Math.floor(Math.random()*6));
     // crit
-    if (Math.random()*100 < (player.crit||5)) { base = Math.floor(base * 1.8); floatText("Crit!", 'gold'); }
-    // apply runes/enchantments on weapon (if any)
-    applyWeaponRunes(player, e, base);
-    e.hp = Math.max(0, e.hp - base);
-    floatText(`-${base}`, 'red'); $('#enemyHP').textContent = e.hp;
-    if (e.hp <= 0) {
-      combatVictory();
-    } else {
-      enemyTurn();
-    }
-    saveGame();
+    if (Math.random()*100 < (player.crit||5)) { dmg = Math.floor(dmg * 1.8); floatPopup('Critical!','gold'); }
+    // runes/enchant (weapon effects)
+    applyWeaponEffects(player, combat.enemy, dmg);
+    combat.enemy.hp = Math.max(0, combat.enemy.hp - dmg);
+    $('#enemyHP').textContent = combat.enemy.hp;
+    floatPopup(`-${dmg}`, 'red');
+    if (combat.enemy.hp <= 0) return winCombat();
+    enemyAct();
   }
 
-  function playerSkill() {
-    // simple skill: class-based
-    const cls = player.class;
-    if (cls === 'Cleric') {
-      // heal small
-      const heal = Math.max(8, Math.floor(player.maxHP * 0.18));
-      player.hp = Math.min(player.maxHP, player.hp + heal);
-      floatText(`Healed ${heal}`, 'green'); enemyTurn(); saveGame(); updateMainUI();
-      return;
-    }
-    if (cls === 'Rogue') {
-      // heavy crit attempt
-      let dmg = Math.floor(player.atk * 1.7) + Math.floor(Math.random()*6);
-      if (Math.random() < 0.6) { // high crit chance
-        dmg = Math.floor(dmg * 1.5);
-        floatText('Backstab!', 'gold');
-      }
-      combatState.enemy.hp = Math.max(0, combatState.enemy.hp - dmg);
-      $('#enemyHP').textContent = combatState.enemy.hp;
-      if (combatState.enemy.hp <= 0) combatVictory(); else enemyTurn();
-      saveGame(); return;
-    }
-    if (cls === 'Mage') {
-      // magic blast with chance to burn
-      let dmg = Math.floor(player.atk * 1.4 + Math.random()*6);
-      combatState.enemy.hp = Math.max(0, combatState.enemy.hp - dmg);
-      if (Math.random() < 0.28) combatState.enemy.status = combatState.enemy.status || [], combatState.enemy.status.push({ type:'burn', dur:3, power:6 });
-      $('#enemyHP').textContent = combatState.enemy.hp;
-      if (combatState.enemy.hp <= 0) combatVictory(); else enemyTurn(); saveGame(); return;
-    }
-    // fallback: do basic attack
+  function playerSkill(){
+    const cls = player.className;
+    if (cls === 'Cleric') { const heal = Math.max(8, Math.floor(player.maxHP * 0.18)); player.hp = Math.min(player.maxHP, player.hp + heal); floatPopup(`Healed ${heal}`,'green'); enemyAct(); savePlayer(player); return; }
+    if (cls === 'Rogue') { let dmg = Math.floor(player.atk * 1.6) + Math.floor(Math.random()*4); if (Math.random()<0.6){ dmg = Math.floor(dmg*1.4); floatPopup('Backstab!','gold'); } combat.enemy.hp = Math.max(0, combat.enemy.hp - dmg); $('#enemyHP').textContent = combat.enemy.hp; if (combat.enemy.hp<=0) return winCombat(); enemyAct(); savePlayer(player); return; }
+    if (cls === 'Mage') { let dmg = Math.floor(player.atk * 1.4) + Math.floor(Math.random()*6); combat.enemy.hp = Math.max(0, combat.enemy.hp - dmg); if (Math.random()<0.28) combat.enemy.status = combat.enemy.status || [], combat.enemy.status.push({type:'burn', dur:3, power:6}); $('#enemyHP').textContent = combat.enemy.hp; if (combat.enemy.hp<=0) return winCombat(); enemyAct(); savePlayer(player); return; }
+    // fallback
     playerAttack();
   }
 
-  function playerFlee() {
-    // simple flee chance based on speed
-    const chance = Math.min(0.85, 0.25 + (player.spd||10)/100);
-    if (Math.random() < chance) {
-      floatText("You fled successfully.", 'gold');
-      combatState = null; renderMainUI(); saveGame();
-    } else {
-      floatText("Failed to flee!", 'red'); enemyTurn();
-    }
-  }
-
-  function enemyTurn() {
-    if (!combatState) return;
-    const e = combatState.enemy;
-    // tick statuses on enemy & player again before acting
-    tickStatuses(e);
-    tickStatuses(player);
-    if (e.hp <= 0) return;
-    if (e.stunned || e.frozen) {
-      floatText(`${e.name} cannot act!`, 'gold');
-      renderCombatScreen(); return;
-    }
-    // enemy action: damage or special
-    let dmg = Math.max(1, e.atk - Math.floor(player.def * 0.4) + Math.floor(Math.random()*5));
-    // special behavior
-    if (e.special === 'bleed' && Math.random() < 0.2) { player.status.push({ type:'bleed', dur:3, power:4 }); floatText('Bleeding!', 'red'); }
-    if (e.special === 'poison' && Math.random() < 0.2) { player.status.push({ type:'poison', dur:3, power:4 }); floatText('Poisoned!', 'red'); }
-    if (e.special === 'burn' && Math.random() < 0.18) { player.status.push({ type:'burn', dur:3, power:4 }); floatText('Burned!', 'red'); }
-    if (e.special === 'rage' && e.hp < (e.maxHp*0.35)) dmg = Math.floor(dmg * 1.6);
+  function enemyAct(){
+    if (!combat || !combat.enemy) return;
+    tickStatuses(player); tickStatuses(combat.enemy);
+    const e = combat.enemy;
+    if (e.hp <= 0) return winCombat();
+    // enemy special chance
+    if (e.behavior === 'bleed' && Math.random() < 0.18) { player.status.push({type:'bleed', dur:3, power:4}); floatPopup('Bleeding','red'); }
+    if (e.behavior === 'burn' && Math.random() < 0.16) { player.status.push({type:'burn', dur:3, power:5}); floatPopup('Burned','red'); }
+    const dmg = Math.max(1, e.atk - Math.floor(player.defStat*0.4) + Math.floor(Math.random()*5));
     player.hp = Math.max(0, player.hp - dmg);
-    floatText(`-${dmg}`, 'red');
-    if (player.hp <= 0) {
-      // player death handling
-      floatText('You fell...', 'red'); combatState = null; renderMainUI(); player.hp = Math.floor(player.maxHP * 0.4); saveGame();
-      return;
-    }
-    renderCombatScreen();
-    saveGame();
+    floatPopup(`-${dmg}`, 'red');
+    if (player.hp <= 0) { floatPopup('You fell...','red'); combat = null; player.hp = Math.max(1, Math.floor(player.maxHP*0.4)); savePlayer(player); updateMainUI(); return; }
+    renderCombatUI(); savePlayer(player);
   }
 
-  function tickStatuses(target) {
+  function playerFlee(){
+    const chance = Math.min(0.9, 0.25 + (player.spd||8)/100);
+    if (Math.random() < chance) { floatPopup('Fled!', 'gold'); combat = null; updateMainUI(); savePlayer(player); } else { floatPopup('Failed to flee','red'); enemyAct(); }
+  }
+
+  function tickStatuses(target){
     if (!target || !target.status) return;
-    // resolve and decrement
-    for (let i = target.status.length -1; i >=0; i--) {
+    for (let i = target.status.length-1; i>=0; i--){
       const s = target.status[i];
-      if (s.type === 'poison') { const d = s.power || 5; target.hp = Math.max(0, target.hp - d); floatText(`☠️ -${d}`,'red'); }
-      if (s.type === 'burn') { const d = s.power || 5; target.hp = Math.max(0, target.hp - d); floatText(`🔥 -${d}`,'red'); }
-      if (s.type === 'bleed') { const d = s.power || 3; target.hp = Math.max(0, target.hp - d); floatText(`💉 -${d}`,'red'); }
-      // regen
-      if (s.type === 'regen') { const h = s.power || Math.max(1, Math.floor(target.maxHp*0.03)); target.hp = Math.min(target.maxHp, target.hp + h); floatText(`🌿 +${h}`,'green'); }
+      if (s.type === 'poison') { const d = s.power || 5; target.hp = Math.max(0, target.hp - d); floatPopup(`☠️ -${d}`,'red'); }
+      if (s.type === 'burn')   { const d = s.power || 5; target.hp = Math.max(0, target.hp - d); floatPopup(`🔥 -${d}`,'red'); }
+      if (s.type === 'bleed')  { const d = s.power || 3; target.hp = Math.max(0, target.hp - d); floatPopup(`💉 -${d}`,'red'); }
+      if (s.type === 'regen')  { const h = s.power || Math.max(1, Math.floor(target.maxHP * 0.03)); target.hp = Math.min(target.maxHP, target.hp + h); floatPopup(`🌿 +${h}`,'green'); }
       s.dur--; if (s.dur <= 0) target.status.splice(i,1);
     }
   }
 
-  function combatVictory() {
-    const e = combatState.enemy;
-    floatText(`Victory! +XP`, 'green');
-    const xpGain = Math.max(10, Math.floor((e.maxHp + e.atk*4) / 12));
-    player.xp = (player.xp || 0) + xpGain;
-    // aces drop:
-    const roll = Math.random();
-    if (roll < 0.45) player.aces.Clubs++;
-    else if (roll < 0.75) player.aces.Diamonds++;
-    else if (roll < 0.92) player.aces.Hearts++;
+  function winCombat(){
+    if (!combat) return;
+    const e = combat.enemy;
+    const xpGain = Math.max(8, Math.floor((e.maxHp + e.atk*5) / 12));
+    player.xp = (player.xp||0) + xpGain;
+    // drop aces
+    const r = Math.random();
+    if (r < 0.45) player.aces.Clubs++;
+    else if (r < 0.75) player.aces.Diamonds++;
+    else if (r < 0.92) player.aces.Hearts++;
     else player.aces.Spades++;
     // possible loot
     if (Math.random() < 0.38) player.inventory.push(randomLoot());
-    combatState = null;
-    // process levelup
-    if (player.xp >= (player.nextXP || 100)) {
-      player.level = (player.level||1) + 1;
-      player.xp = 0;
-      player.maxHP += 10; player.hp = player.maxHP; player.atk += 2;
-      floatText('LEVEL UP! Fully healed', 'gold');
-    }
-    saveGame(); updateMainUI();
+    floatPopup(`Victory! +${xpGain} XP`, 'green');
+    combat = null;
+    checkLevelUp();
+    savePlayer(player); updateMainUI();
   }
 
-  // ---------- Loot generator ----------
-  function randomLoot() {
-    const rarityRoll = Math.random();
-    let rarity = 'Common';
-    if (rarityRoll < 0.45) rarity = 'Common';
-    else if (rarityRoll < 0.72) rarity = 'Uncommon';
-    else if (rarityRoll < 0.9) rarity = 'Rare';
-    else if (rarityRoll < 0.97) rarity = 'Epic';
-    else rarity = 'Legendary';
-    const types = ['Sword','Bow','Staff','Armor','Ring','Amulet','Potion'];
-    const type = types[Math.floor(Math.random()*types.length)];
-    // potions are usable
-    if (type === 'Potion') {
-      return { name:`${rarity} Healing Potion`, desc:'Heals when used', usable:true, type:'potion', power: 40 + Math.floor(Math.random()*60) };
+  function checkLevelUp(){
+    while (player.xp >= player.nextXP) {
+      player.xp -= player.nextXP;
+      player.level++;
+      player.maxHP += Math.floor(8 + player.level * 1.2);
+      player.atk += Math.floor(2 + player.level * 0.2);
+      player.nextXP = Math.max(60, Math.floor(120 * Math.pow(player.level, 1.45)));
+      player.hp = player.maxHP;
+      floatPopup('LEVEL UP! Fully healed', 'gold');
     }
-    const power = 6 + Math.floor(Math.random()*18) + (['Rare','Epic','Legendary'].includes(rarity)?10:0);
-    const slot = (type==='Armor') ? 'Armor' : (type==='Ring'||type==='Amulet') ? 'Accessory' : 'Weapon';
-    return { id:Math.random().toString(36).slice(2,8), name:`${rarity} ${type}`, rarity, power, slot, valueMultiplier: (rarity==='Common'?0.8:rarity==='Uncommon'?1.1:rarity==='Rare'?1.5:rarity==='Epic'?2.2:3.5) };
   }
 
-  // ---------- Weapon/Runes application ----------
-  function applyWeaponRunes(attacker, defender, damage) {
+  /* ---------------- Inventory / Merchant / Enchant ---------------- */
+  function openInventory(){
+    const itms = player.inventory || [];
+    if (itms.length === 0) return showModal('Inventory','<div class="small">Empty</div>');
+    let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+    itms.forEach((it, idx) => {
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
+        <div><strong>${it.name}</strong><div class="small">${it.rarity||''} ${it.slot?('• '+it.slot):''}</div></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${it.usable?`<button onclick="useInventory(${idx})">Use</button>`:''}
+          ${it.slot?`<button onclick="equipInventory(${idx})">Equip</button>`:''}
+          <button onclick="sellInventory(${idx})">Sell</button>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+    showModal('Inventory', html);
+  }
+  window.useInventory = function(i) {
+    const it = player.inventory[i];
+    if (!it) return;
+    if (it.type === 'potion') {
+      player.hp = Math.min(player.maxHP, player.hp + (it.power||50));
+      player.inventory.splice(i,1);
+      floatPopup(`Healed +${it.power||50}`,'green'); savePlayer(player); updateMainUI(); closeModal();
+    }
+  };
+  window.equipInventory = function(i){
+    const it = player.inventory[i];
+    if (!it) return;
+    const slot = it.slot || 'Accessory';
+    player.equipment[slot] = it;
+    if (slot === 'Weapon') player.atk += Math.floor((it.power||7)/2);
+    if (slot === 'Armor') { player.maxHP += (it.power||10); player.hp += (it.power||10); }
+    player.inventory.splice(i,1);
+    floatPopup(`Equipped ${it.name}`,'gold');
+    savePlayer(player); updateMainUI(); closeModal();
+  };
+  window.sellInventory = function(i){
+    const it = player.inventory[i];
+    if (!it) return;
+    const val = Math.max(5, Math.floor((it.power||10) * (it.valueMultiplier||1)));
+    addAcesByValue(val);
+    player.inventory.splice(i,1);
+    floatPopup(`Sold for ${val} value`,'gold');
+    savePlayer(player); updateMainUI(); closeModal();
+  };
+
+  function openMerchant(){
+    let html = '<div class="small">Offers (value):</div><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">';
+    const offers = [];
+    for (let i=0;i<3;i++){
+      const it = randomLoot();
+      const price = Math.max(12, Math.floor((it.power||10) * (6 + Math.random()*8)));
+      offers.push({it,price});
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
+        <div><strong>${it.name}</strong><div class="small">${it.rarity||''} • ${it.slot||''}</div></div>
+        <div style="text-align:right"><div class="small">${price} value</div><button onclick="buyOffer(${i})">Buy</button></div>
+      </div>`;
+    }
+    html += `</div>`;
+    player._offers = offers; showModal('Merchant', html);
+  }
+  window.buyOffer = function(i){
+    const off = player._offers && player._offers[i];
+    if(!off) return;
+    if (!spendAces(off.price)) { floatPopup('Not enough Aces','red'); return; }
+    player.inventory.push(off.it); floatPopup(`Bought ${off.it.name}`,'green'); savePlayer(player); updateMainUI(); closeModal();
+  };
+
+  function openEnchant(){
+    const pool = [
+      { id:'burn', name:'Burn Rune', cost:120, desc:'Chance to burn' },
+      { id:'poison', name:'Poison Rune', cost:110, desc:'Chance to poison' },
+      { id:'lifesteal', name:'Vampiric Rune', cost:170, desc:'Heal on hit' }
+    ];
+    let html = '<div style="display:grid;gap:8px">';
+    pool.forEach((p,i)=> html += `<div style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)"><strong>${p.name}</strong><div class="small">${p.desc}</div><div style="margin-top:6px" class="small">Cost: ${p.cost}</div><div style="margin-top:8px"><button onclick="applyRune(${i})">Apply</button></div></div>`);
+    html += '</div>';
+    player._runes = pool; showModal('Enchant', html);
+  }
+  window.applyRune = function(i){
+    const rune = player._runes && player._runes[i];
+    if (!rune) return;
+    if (!spendAces(rune.cost)) { floatPopup('Not enough Aces','red'); return; }
+    const w = player.equipment.Weapon;
+    if (!w) { floatPopup('No weapon equipped','red'); return; }
+    w.runes = w.runes || []; w.runes.push(rune.id); floatPopup(`Applied ${rune.name}`,'gold'); savePlayer(player); closeModal();
+  };
+
+  function applyWeaponEffects(attacker, defender, damage) {
     const w = attacker.equipment.Weapon;
     if (!w) return;
-    // handle runes array if present
     (w.runes || []).forEach(r => {
-      if (r === 'burn' && Math.random() < 0.28) defender.status = defender.status || [], defender.status.push({ type:'burn', dur:3, power:6 });
-      if (r === 'poison' && Math.random() < 0.28) defender.status = defender.status || [], defender.status.push({ type:'poison', dur:3, power:6 });
-      if (r === 'lifesteal') {
-        const heal = Math.max(1, Math.floor(damage * 0.12));
-        attacker.hp = Math.min(attacker.maxHP, attacker.hp + heal);
-        floatText(`🩸 +${heal}`,'green');
-      }
+      if (r === 'burn' && Math.random() < 0.28) defender.status = defender.status || [], defender.status.push({type:'burn', dur:3, power:6});
+      if (r === 'poison' && Math.random() < 0.28) defender.status = defender.status || [], defender.status.push({type:'poison', dur:3, power:6});
+      if (r === 'lifesteal') { const heal = Math.max(1, Math.floor(damage*0.12)); attacker.hp = Math.min(attacker.maxHP, attacker.hp + heal); floatPopup(`🩸 +${heal}`,'green'); }
     });
   }
 
-  // ---------- UI helpers: modal, main UI ----------
-  function showModal(title, html) {
-    modalContainer.style.display = 'flex';
-    modalContainer.innerHTML = `<div class="modal"><h2>${title}</h2><div style="margin-top:8px">${html}</div><div style="margin-top:12px"><button id="modalClose">OK</button></div></div>`;
-    document.getElementById('modalClose').onclick = () => { modalContainer.style.display = 'none'; modalContainer.innerHTML = ''; };
-  }
-  function closeModal() { modalContainer.style.display = 'none'; modalContainer.innerHTML = ''; }
-
-  function updateMainUI() {
-    // If no player yet, do nothing (character creation handles start)
-    if (!player) return;
-    // If in combat, render combat; otherwise render main screen
-    if (combatState) { renderCombatScreen(); return; }
-    // update main panel
-    const aceTotal = totalAcesValue(player.aces);
-    gameUI.innerHTML = `<div class="panel">
-      <h2>${player.emoji||''} ${player.name} — ${player.class} (Lv ${player.level})</h2>
-      <div><strong>HP:</strong> ${player.hp}/${player.maxHP}</div>
-      <div><strong>ATK:</strong> ${player.atk} • <strong>DEF:</strong> ${player.def}</div>
-      <div><strong>XP:</strong> ${player.xp}/${player.nextXP||100}</div>
-      <div style="margin-top:8px"><strong>Aces value:</strong> ${aceTotal} (♠${player.aces.Spades||0} ♥${player.aces.Hearts||0} ♦${player.aces.Diamonds||0} ♣${player.aces.Clubs||0})</div>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="exploreDungeon()">🕯️ Explore Dungeon</button>
-        <button onclick="openMerchant()">🪙 Merchant</button>
-        <button onclick="openInventory()">🎒 Inventory</button>
-        <button onclick="openEnchantMenu()">🔮 Enchant</button>
-        <button onclick="saveGame()">💾 Save</button>
-      </div>
-    </div>`;
-    updateBiome();
+  /* ---------------- Loot generator ---------------- */
+  function randomLoot(){
+    const rarities = ['Common','Uncommon','Rare','Epic','Legendary'];
+    const r = Math.random();
+    let rarity = 'Common';
+    if (r > 0.96) rarity='Legendary'; else if (r > 0.86) rarity='Epic'; else if (r > 0.7) rarity='Rare'; else if (r>0.45) rarity='Uncommon';
+    const types = ['Sword','Bow','Staff','Armor','Ring','Amulet','Potion'];
+    const type = types[Math.floor(Math.random()*types.length)];
+    if (type === 'Potion') return { name:`${rarity} Healing Potion`, usable:true, type:'potion', power:40 + Math.floor(Math.random()*60), rarity };
+    const power = 6 + Math.floor(Math.random()*18) + (rarity==='Rare'?8:rarity==='Epic'?16:0);
+    const slot = (type==='Armor') ? 'Armor' : (type==='Ring'||type==='Amulet') ? 'Accessory' : 'Weapon';
+    return { id:Math.random().toString(36).slice(2,8), name:`${rarity} ${type}`, rarity, power, slot, valueMultiplier:(rarity==='Common'?0.8:rarity==='Uncommon'?1.1:rarity==='Rare'?1.6:rarity==='Epic'?2.6:4.2) };
   }
 
-  // ---------- Biome visuals ----------
-  function updateBiome() {
-    // use player.level to pick biome
+  /* ---------------- Aces helpers ---------------- */
+  function addAcesByValue(v){ addAcesByValueInternal(v); savePlayer(player); updateMainUI(); }
+  function addAcesByValueInternal(v){
+    const total = totalAcesVal(player.aces) + Math.floor(v);
+    player.aces = coinsFromValue(total);
+  }
+  function spendAces(v){
+    const total = totalAcesVal(player.aces);
+    if (total < v) return false;
+    player.aces = coinsFromValue(total - v);
+    savePlayer(player);
+    return true;
+  }
+  function coinsFromValue(total){
+    return coinsFromValueGlobal(total);
+  }
+  function coinsFromValueGlobal(total) {
+    total = Math.max(0, Math.floor(total));
+    const out = { Spades:0, Hearts:0, Diamonds:0, Clubs:0 };
+    const order = ['Spades','Hearts','Diamonds','Clubs'];
+    for (const k of order) { out[k] = Math.floor(total / ACE_VALUES[k]); total = total % ACE_VALUES[k]; }
+    return out;
+  }
+
+  /* ---------------- Biome visuals ---------------- */
+  function updateBiome(){
     const lvl = player.level || 1;
-    let bg = "linear-gradient(to bottom, #1b3a1a, #081308)";
-    if (lvl < 6) bg = "linear-gradient(to bottom, #1b3a1a, #081308)"; // forest
-    else if (lvl < 11) bg = "linear-gradient(to bottom, #e6c76a, #d9a441)"; // desert
-    else if (lvl < 16) bg = "linear-gradient(to bottom, #a9d3f5, #456ca8)"; // tundra
-    else bg = "linear-gradient(to bottom, #4c0a1a, #2b0707)"; // volcano
-    biomeBg.style.backgroundImage = bg;
-    spawnParticles();
+    let bg = "linear-gradient(180deg,#071728,#031022)";
+    if (lvl < 6) bg = "linear-gradient(180deg,#08262a,#041416)";
+    else if (lvl < 11) bg = "linear-gradient(180deg,#3c2f10,#24170a)";
+    else if (lvl < 16) bg = "linear-gradient(180deg,#0b2a3a,#031022)";
+    else bg = "linear-gradient(180deg,#2b0505,#0a0000)";
+    biomeBg.style.background = bg; spawnParticles();
   }
-
   function spawnParticles(){
     particleLayer.innerHTML = '';
     for (let i=0;i<18;i++){
       const p = document.createElement('div'); p.className='particle';
       const size = Math.random()*6 + 2; p.style.width = p.style.height = `${size}px`;
-      p.style.left = `${Math.random()*100}%`; p.style.bottom = `-${Math.random()*150}px`;
-      p.style.background = `rgba(255,255,255,${Math.random()*0.7})`; p.style.animationDuration = `${4 + Math.random()*6}s`;
+      p.style.left = `${Math.random()*100}%`; p.style.bottom = `${-Math.random()*200}px`;
+      p.style.background = `rgba(255,255,255,${0.06 + Math.random()*0.1})`; p.style.animationDuration = `${4 + Math.random()*6}s`;
       particleLayer.appendChild(p);
     }
   }
 
-  // ---------- Player death ----------
-  function playerDeath() {
-    floatText("You fell... respawning with partial HP", 'red');
+  /* ---------------- Player death ---------------- */
+  function playerDeath(){
+    floatPopup('You perished... respawning at partial HP','red');
     player.hp = Math.max(1, Math.floor(player.maxHP * 0.4));
-    saveGame(); updateMainUI();
+    savePlayer(player); updateMainUI();
   }
 
-  // ---------- Helper random enemy chooser for testing ----------
-  // Exposed functions for console testing:
+  /* ---------------- Expose small debug API ---------------- */
   window.NRPG = {
-    addAcesValue, spendAces, randomLoot, startCombat: (e)=>startCombat(e), getPlayer: ()=>player
+    player: ()=> player,
+    save: ()=> savePlayer(player),
+    addValue: (v)=> { addAcesByValueInternal(v); savePlayer(player); updateMainUI(); }
   };
-
-  // ---------- Start / hookup ----------
-  // If a player exists from save, show the main UI, else keep the character creation UI visible (index.html handles creation)
-  if (player) {
-    updateMainUI();
-  } else {
-    // character creation flow in index.html will call save then reload or call startGame; ensure global function exists
-    window.startGame = function(createdPlayer){
-      // If index.html's creation code stored player to localStorage under 'notebookSave', reload it
-      const s = loadGame();
-      if (s) { player = normalizePlayer(s); updateMainUI(); }
-    };
-  }
-
-  // Provide global bindings for UI buttons (index.html uses these functions directly)
-  window.openInventory = openInventory;
-  window.openMerchant = openMerchant;
-  window.exploreDungeon = exploreDungeon;
-  window.openEnchantMenu = openEnchantMenu;
-  window.saveGame = saveGame;
-  window.toggleAdminPanel = function() {
-    const ap = $('#adminPanel');
-    if(!ap) return;
-    ap.classList.toggle('visible');
-    // load into inputs if present
-    if ($('#adminName')) $('#adminName').value = player.name || '';
-    if ($('#adminLevel')) $('#adminLevel').value = player.level || 1;
-    if ($('#adminXP')) $('#adminXP').value = player.xp || 0;
-    if ($('#adminHP')) $('#adminHP').value = player.hp || 0;
-    if ($('#adminAces')) $('#adminAces').value = totalAcesValue(player.aces) || 0;
-  };
-
-  // If there is an admin panel with a Save button, attach it
-  try {
-    if ($('#adminSave')) $('#adminSave').addEventListener('click', ()=>{
-      player.name = $('#adminName').value || player.name;
-      player.level = Math.max(1, parseInt($('#adminLevel').value)||player.level);
-      player.xp = parseInt($('#adminXP').value)||player.xp;
-      player.hp = Math.min(player.maxHP, parseInt($('#adminHP').value)||player.hp);
-      // set aces from total value input if present
-      const val = parseInt($('#adminAces').value) || totalAcesValue(player.aces);
-      player.aces = coinsFromValue(val);
-      saveGame(); updateMainUI(); floatText('Admin save applied','green');
-    });
-  } catch(e){ /* ignore if not present yet */ }
 
 })();
