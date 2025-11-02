@@ -119,7 +119,7 @@ function newRun(classKey, seed, daily=false){
   initSeed(state.seed);
   const CL = CLASS_DATA[classKey] || CLASS_DATA.Warrior;
   const starterInv = [{ id:'starter_potion', name:'Potion', type:'consumable', sprite:'potion' }];
-  const p = { name:classKey, classKey, baseHp: classKey==='Warrior'?30: classKey==='Mage'?20:24, hp:0, baseAtk: classKey==='Warrior'?7: classKey==='Mage'?3:5, baseDef: classKey==='Warrior'?2:1, mag: classKey==='Mage'?8:4, mp:10, xp:0, level:1, gold:15, potions:1, ethers:1, equip:{weapon:null,armor:null,accessory:null}, inventory: starterInv, spells: classKey==='Mage'?['Firebolt','Ice Shard','Heal'] : (classKey==='Rogue'?['Ice Shard','Firebolt']:['Shield']), skills:[], tempDef:0, status:[], floor:1, daily:!!daily, trophies:[] };
+  const p = { name:classKey, classKey, baseHp: classKey==='Warrior'?30: classKey==='Mage'?20:24, hp:20, baseAtk: classKey==='Warrior'?7: classKey==='Mage'?3:5, baseDef: classKey==='Warrior'?2:1, mag: classKey==='Mage'?8:4, mp:10, xp:0, level:1, gold:15, potions:1, ethers:1, equip:{weapon:null,armor:null,accessory:null}, inventory: starterInv, spells: classKey==='Mage'?['Firebolt','Ice Shard','Heal'] : (classKey==='Rogue'?['Ice Shard','Firebolt']:['Shield']), skills:[], tempDef:0, status:[], floor:1, daily:!!daily, trophies:[] };
   state.player = p; derivePlayer(); state.relics=[]; state.currentEnemy=null; state.inCombat=false; state.floorMap={}; if(!daily) cineShow(`Seed ${state.seed} — The descent begins...`,900).then(()=>{ log('New Run: '+classKey); fullSave(); renderAll(); }); if(daily) { log('Daily run started'); fullSave(); renderAll(); }
 }
 
