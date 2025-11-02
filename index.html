@@ -1,79 +1,251 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Notebook RPG</title>
+  <title>epictextrpg — The Descent Within (Phase 10)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Biome background & particle layers -->
-  <div id="biomeBackground"></div>
-  <div id="particleLayer"></div>
-
-  <!-- Character Creation (inline) -->
-  <main id="creationRoot" class="centerWrap">
-    <section id="characterCreation" class="card">
-      <h1 class="title">Create Your Character</h1>
-      <p class="muted">Write your hero into the notebook — choose a name, class, and icon.</p>
-
-      <label class="field">
-        <div class="fieldLabel">Name</div>
-        <input id="charName" class="input" type="text" maxlength="18" placeholder="Arin, Lyra, Kael..." />
-      </label>
-
-      <div class="field">
-        <div class="fieldLabel">Choose Class</div>
-        <div id="classList" class="classGrid"></div>
+  <!-- Seed overlay / start screen -->
+  <div id="seedOverlay" class="seed-overlay" role="dialog" aria-modal="true">
+    <div class="seed-card">
+      <h2>epictextrpg — The Descent Within</h2>
+      <p class="muted">Enter a seed (shareable) or pick Random / Daily. Choose a class to begin Season 1.</p>
+      <input id="seedInput" type="text" inputmode="numeric" placeholder="Enter seed or leave blank" />
+      <div style="margin-top:8px;">
+        <select id="classSelect" aria-label="Choose class">
+          <option value="Warrior">Warrior</option>
+          <option value="Mage">Mage</option>
+          <option value="Rogue">Rogue</option>
+        </select>
       </div>
-
-      <label class="field">
-        <div class="fieldLabel">Symbol (emoji, optional)</div>
-        <input id="charEmoji" class="input" type="text" maxlength="2" placeholder="⚔️ 🐺 🪄" />
-      </label>
-
-      <div class="row">
-        <button id="beginAdventure" class="btn primary">Begin Adventure</button>
-        <button id="loadSaveBtn" class="btn">Load Save</button>
+      <div class="seed-controls">
+        <button id="btnStartSeed" class="accent">Begin Run</button>
+        <button id="btnRandomSeed" class="secondary">Random Seed</button>
+        <button id="btnDailySeed" class="secondary">Today's Challenge</button>
       </div>
-
-      <div id="creationHint" class="muted small" aria-hidden="true"></div>
-    </section>
-  </main>
-
-  <!-- Main Game Container (hidden until player exists) -->
-  <main id="gameRoot" class="centerWrap hidden">
-    <section id="gameContainer" class="card wide">
-      <header class="gameHeader">
-        <h1 id="gameTitle">Notebook RPG</h1>
-        <div id="playerBadge" class="badge"></div>
-      </header>
-
-      <div id="gameUI"></div>
-    </section>
-  </main>
-
-  <!-- Floating texts & modal -->
-  <div id="floatLayer" aria-hidden="true"></div>
-  <div id="modalContainer" class="modalRoot" aria-hidden="true"></div>
-
-  <!-- Admin Panel (hidden by default; toggle Ctrl+Shift+A) -->
-  <aside id="adminPanel" class="adminPanel hidden">
-    <h3>Admin</h3>
-    <label class="field">Name <input id="adminName" class="input" /></label>
-    <label class="field">Level <input id="adminLevel" class="input" type="number" /></label>
-    <label class="field">XP <input id="adminXP" class="input" type="number" /></label>
-    <label class="field">HP <input id="adminHP" class="input" type="number" /></label>
-    <label class="field">Aces Value <input id="adminAces" class="input" type="number" /></label>
-    <div class="row">
-      <button id="adminSave" class="btn primary">Save</button>
-      <button id="spawnLoot" class="btn">Spawn Loot</button>
-      <button id="addXP" class="btn">+100 XP</button>
-      <button id="healFull" class="btn">Full Heal</button>
-      <button id="resetGame" class="btn warn">Reset</button>
+      <div class="small muted" style="margin-top:8px">Seed appears top-right after start — copy/share to replay exact dungeon.</div>
     </div>
-  </aside>
+  </div>
 
-  <script src="game.js" defer></script>
+  <div id="app" class="wrap" aria-hidden="true">
+    <header class="topbar">
+      <div>
+        <h1 id="gameTitle">epictextrpg</h1>
+        <div class="subtitle">The Descent Within — Season 1 (Phase 10)</div>
+      </div>
+      <div class="top-actions">
+        <div class="small muted">Seed: <span id="seedDisplay">—</span></div>
+        <div class="small muted">Legacy: <span id="legacyPts">0</span></div>
+        <button id="btnMeta" class="secondary">Shrine</button>
+        <button id="btnNew" class="secondary">New Run</button>
+        <button id="btnDaily" class="secondary">Daily Run</button>
+        <button id="btnCredits" class="secondary">Credits</button>
+        <button id="btnReset" class="warn">Reset Save</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel left">
+        <section class="panel-block">
+          <div class="section-title">Player</div>
+          <div id="playerCard" class="player-card">
+            <div id="playerName" class="player-name">—</div>
+            <div id="playerClass" class="small muted">Choose a class</div>
+            <div class="equip-list muted">
+              <div>Weapon: <span id="slotWeapon">None</span></div>
+              <div>Armor: <span id="slotArmor">None</span></div>
+              <div>Accessory: <span id="slotAccessory">None</span></div>
+            </div>
+            <div class="relic-row small muted" id="relicRow">Relics: —</div>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-title">Stats</div>
+          <div class="stats-grid">
+            <div class="stat">HP <span id="hp">0</span>/<span id="maxhp">0</span></div>
+            <div class="stat">MP <span id="mp">0</span>/<span id="maxmp">0</span></div>
+            <div class="stat">ATK <span id="atk">0</span></div>
+            <div class="stat">DEF <span id="def">0</span></div>
+            <div class="stat">MAG <span id="mag">0</span></div>
+            <div class="stat">Floor <span id="floor">0</span></div>
+            <div class="stat">Gold <span id="gold">0</span></div>
+            <div class="stat">XP <span id="xp">0</span></div>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-title">Mind</div>
+          <div class="sanity-wrap">
+            <div class="small muted">Sanity</div>
+            <div class="sanity-bar" id="sanityBar" title="100">
+              <div class="sanity-fill" id="sanityFill" style="width:100%"></div>
+              <div class="sanity-label" id="sanityLabel">Stable</div>
+            </div>
+            <div class="small muted" id="sanityHint">Clear thoughts.</div>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-title">Quick</div>
+          <div class="controls">
+            <button id="btnEnterRoom">Enter Node</button>
+            <button id="btnShop">Shop</button>
+            <button id="btnRest" class="secondary">Rest (5g)</button>
+            <button id="btnInventory" class="secondary">Inventory</button>
+            <button id="btnJournal" class="secondary">Journal</button>
+            <button id="btnAchievements" class="secondary">Book of Deeds</button>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="small muted">Inventory summary</div>
+          <div class="small" id="invSummary">Potions: 0 • Ethers: 0 • Items: 0</div>
+          <div style="margin-top:8px"><button id="btnExport" class="secondary">Export Log</button></div>
+        </section>
+      </aside>
+
+      <section class="panel right">
+        <div class="panel-block">
+          <div class="section-title">Encounter</div>
+          <div id="encounterBox" class="encounter">
+            <div id="encounterTop" class="encounter-top">
+              <div id="battleArea" class="battle-area"></div>
+              <div id="encounterTitle" class="encounter-title">Welcome</div>
+            </div>
+            <div id="encounterText" class="muted">Start a run or choose a class.</div>
+
+            <div id="combatUI" class="combat-ui hidden">
+              <div class="enemy-panel">
+                <div id="enemyName" class="enemy-name">—</div>
+                <div class="small muted">HP: <span id="enemyHP">0</span> • ATK: <span id="enemyATK">0</span></div>
+                <div class="small muted">Status: <span id="enemyStatus">—</span></div>
+                <div id="enemyIntent" class="small muted">Intent: —</div>
+              </div>
+
+              <div class="combat-actions">
+                <button id="btnAttack">Attack</button>
+                <button id="btnSkill" class="secondary">Skill</button>
+                <button id="btnSpell" class="secondary">Spell</button>
+                <button id="btnItem" class="secondary">Item</button>
+                <button id="btnRun" class="warn">Run</button>
+              </div>
+
+              <div id="skillMenu" class="spell-menu hidden"><div class="small muted">Skills</div><div id="skillRow" class="spell-row"></div><div style="margin-top:8px"><button id="btnSkillBack" class="secondary">Back</button></div></div>
+
+              <div id="spellMenu" class="spell-menu hidden"><div class="small muted">Spells (MP)</div><div class="spell-row" id="spellRow"></div><div style="margin-top:8px"><button id="btnSpellBack" class="secondary">Back</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-block">
+          <div class="section-title">Shop / Events / Town</div>
+          <div id="shopPanel" class="shop-panel muted">Merchants, events and nodes appear here.</div>
+        </div>
+
+        <div class="panel-block">
+          <div class="section-title">Log</div>
+          <div id="log" class="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Save toast -->
+  <div id="saveToast" class="save-toast">💾 Saved</div>
+
+  <!-- Level-up modal -->
+  <div id="levelModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3 id="levelTitle">Level Up!</h3>
+      <div id="levelDesc" class="modal-body small muted">Choose your reward</div>
+      <div class="modal-body" id="levelChoices" style="display:flex;gap:8px;justify-content:center"></div>
+      <div class="modal-actions"><button id="levelClose" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Dream / Memory modal -->
+  <div id="dreamModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3 id="dreamTitle">Dream</h3>
+      <div class="modal-body" id="dreamBody" style="font-family: ui-monospace, monospace; white-space:pre-wrap;"></div>
+      <div id="dreamChoices" class="modal-actions" style="justify-content:flex-start"></div>
+      <div class="modal-actions"><button onclick="closeDream()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Journal / lore -->
+  <div id="journalModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Journal & Lore</h3>
+      <div id="journalContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeJournal()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Meta / Achievements / Credits -->
+  <div id="metaModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>The Shrine of Memory</h3>
+      <div id="metaContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeMeta()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <div id="achievementsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Book of Deeds</h3>
+      <div id="achContent" class="modal-body"></div>
+      <div class="modal-actions"><button onclick="closeAchievements()" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <div id="creditsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Credits</h3>
+      <div class="modal-body">
+        <p><strong>Created by:</strong> Jeremy Frith</p>
+        <p><strong>Development Assistance:</strong> GPT-5 Thinking mini</p>
+        <p class="small muted">Phase 10 — The Descent Within</p>
+      </div>
+      <div class="modal-actions"><button id="closeCredits" class="secondary">Close</button></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <script>
+    (function(){
+      const overlay = document.getElementById('seedOverlay');
+      const app = document.getElementById('app');
+      const seedInput = document.getElementById('seedInput');
+      const clsSelect = document.getElementById('classSelect');
+      document.getElementById('btnStartSeed').onclick = ()=> {
+        const s = seedInput.value.trim() || String(Math.floor(Math.random()*900000 + 100000));
+        const cls = clsSelect.value || 'Warrior';
+        startWithSeed(s, cls);
+      };
+      document.getElementById('btnRandomSeed').onclick = ()=> {
+        const s = String(Math.floor(Math.random()*900000 + 100000));
+        seedInput.value = s;
+        startWithSeed(s, clsSelect.value || 'Warrior');
+      };
+      document.getElementById('btnDailySeed').onclick = ()=> {
+        const s = window.generateDailySeed();
+        seedInput.value = s;
+        startWithSeed(s, clsSelect.value || 'Warrior');
+      };
+      function startWithSeed(s, cls){
+        window.INIT_SEED = s;
+        if(document.getElementById('seedDisplay')) document.getElementById('seedDisplay').innerText = s;
+        overlay.classList.add('hidden');
+        setTimeout(()=> overlay.style.display='none', 450);
+        app.setAttribute('aria-hidden','false');
+        if(window.gameInit) window.gameInit(s, cls);
+      }
+      if(window.INIT_SEED){ overlay.style.display = 'none'; app.setAttribute('aria-hidden','false'); }
+    })();
+  </script>
 </body>
 </html>
