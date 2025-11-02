@@ -1,160 +1,108 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Notebook RPG — Full (Stage A + B)</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notebook RPG</title>
+<link rel="stylesheet" href="style.css">
+
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: "Courier New", monospace;
+    background: linear-gradient(180deg, #f7f1e3, #dcd0b9);
+    color: #2d1b00;
+    overflow: hidden;
+  }
+
+  #loadingScreen {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #f7f1e3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    transition: opacity 0.6s ease;
+    z-index: 9999;
+  }
+
+  #loadingScreen.fadeOut {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #loadingText {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    animation: pulse 1.5s infinite ease-in-out;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.3; }
+    50% { opacity: 1; }
+    100% { opacity: 0.3; }
+  }
+
+  canvas, #gameUI {
+    opacity: 0;
+    transition: opacity 1s ease;
+  }
+
+  canvas.active, #gameUI.active {
+    opacity: 1;
+  }
+</style>
 </head>
 <body>
-  <!-- Splash & Daily reward modals -->
-  <div id="splash" class="ui-overlay hidden"><div class="splash-card">Notebook RPG — Restoring save...</div></div>
-  <div id="daily-modal" class="ui-overlay hidden">
-    <div class="modal-card">
-      <h3>🎁 Daily Reward</h3>
-      <div id="daily-content"></div>
-      <div class="modal-actions">
-        <button id="daily-claim">Claim</button>
-      </div>
-    </div>
+
+<!-- Loading Splash / Redirect -->
+<div id="loadingScreen">
+  <div id="loadingText">Opening your notebook...</div>
+  <div id="subText">Preparing your adventure...</div>
+</div>
+
+<!-- Main Game Content -->
+<div id="gameContainer">
+  <canvas id="gameCanvas"></canvas>
+  <div id="gameUI">
+    <!-- Game UI elements get injected dynamically from game.js -->
   </div>
+</div>
 
-  <!-- Parallax background -->
-  <div id="bg">
-    <div class="layer back" id="bg-back"></div>
-    <div class="layer mid" id="bg-mid"></div>
-    <div class="layer front" id="bg-front"></div>
-  </div>
+<script>
+/* Check for existing character */
+const playerData = localStorage.getItem("NotebookRPG_Player");
 
-  <!-- Game -->
-  <div id="game" class="scene scene--visible">
-    <header>
-      <h1>📓 Notebook RPG — Full Build</h1>
-    </header>
+if (!playerData) {
+  // No save found → redirect to creation page
+  window.location.href = "character_create.html";
+} else {
+  // Player exists → proceed to load game
+  const loadingScreen = document.getElementById("loadingScreen");
+  const gameUI = document.getElementById("gameUI");
+  const canvas = document.getElementById("gameCanvas");
 
-    <main id="main-wrap">
-      <section id="top-row">
-        <div id="player-panel">
-          <div id="player-info">
-            <div class="player-top">
-              <div><strong>Level:</strong> <span id="player-level">1</span></div>
-              <div><strong>Zone:</strong> <span id="current-zone">Forest</span></div>
-            </div>
+  // Add immersive intro effect
+  setTimeout(() => {
+    document.getElementById("loadingText").textContent = "Welcome back, adventurer...";
+  }, 1000);
 
-            <div class="hp-row">
-              <div id="player-hp" class="hp-bar"><div class="hp-fill" style="width:100%"></div></div>
-              <div id="player-hp-small">120 / 120</div>
-            </div>
+  setTimeout(() => {
+    loadingScreen.classList.add("fadeOut");
+    canvas.classList.add("active");
+    gameUI.classList.add("active");
+  }, 2000);
 
-            <div class="xp-row">
-              <div class="xp-meta">
-                <div><strong>XP:</strong> <span id="player-xp-text">0 / 120</span></div>
-                <div class="xp-bar" id="player-xp-bar"><div class="xp-fill" style="width:0%"></div></div>
-              </div>
-              <div id="levelup-badge" class="levelup-badge">LEVEL UP!</div>
-            </div>
-
-            <div class="stats-row">
-              <div>ATK: <span id="player-attack-value">16</span></div>
-              <div>Crit: <span id="player-crit">5%</span></div>
-              <div>Dodge: <span id="player-dodge">3%</span></div>
-            </div>
-
-            <div class="aces-row">
-              <strong>🃏 Aces:</strong>
-              <span class="ace-pill clubs">♣ <span id="ace-clubs">0</span></span>
-              <span class="ace-pill diamonds">♦ <span id="ace-diamonds">0</span></span>
-              <span class="ace-pill hearts">♥ <span id="ace-hearts">0</span></span>
-              <span class="ace-pill spades">♠ <span id="ace-spades">0</span></span>
-              <div class="ace-total">Total: <span id="ace-total">0</span></div>
-            </div>
-
-            <div class="companion-row">
-              <strong>Companions:</strong>
-              <div id="companions-list" class="small">None</div>
-            </div>
-
-            <div class="status-row">
-              <strong>Status:</strong>
-              <div id="player-status-list" class="small">Healthy</div>
-            </div>
-
-          </div>
-
-          <div id="equipment-panel">
-            <h2>🧰 Equipped</h2>
-            <div class="equip-slot" id="slot-Weapon"><strong>Weapon:</strong> <span>(empty)</span></div>
-            <div class="equip-slot" id="slot-Armor"><strong>Armor:</strong> <span>(empty)</span></div>
-            <div class="equip-slot" id="slot-Accessory"><strong>Accessory:</strong> <span>(empty)</span></div>
-          </div>
-        </div>
-
-        <aside id="merchant-panel" class="panel scene-section">
-          <h2>🏪 Merchant & Enchanter</h2>
-          <div class="merchant-row">
-            <div>
-              <button id="merchant-refresh">Refresh Shop</button>
-              <button id="open-enchant">Enchant Item</button>
-              <button id="recruit-companion">Recruit Companion</button>
-            </div>
-            <div id="merchant-inventory"></div>
-            <div id="merchant-note" class="small">Prices use Aces value (auto-converts)</div>
-          </div>
-
-          <div id="enchant-modal" class="modal hidden">
-            <div class="modal-card">
-              <h3>🔮 Enchant Item</h3>
-              <div id="enchant-content">
-                <div><small>Choose a gear item from your inventory to enchant (cost shown).</small></div>
-                <div id="enchant-target"></div>
-                <div id="enchant-options"></div>
-                <div class="modal-actions">
-                  <button id="enchant-confirm">Enchant</button>
-                  <button id="enchant-cancel">Cancel</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </aside>
-      </section>
-
-      <section id="combat" class="panel scene-section">
-        <div id="monster-area"></div>
-        <div id="actions">
-          <button id="attack-btn">Attack</button>
-          <button id="special-btn">Special</button>
-          <button id="flee-btn">Flee</button>
-        </div>
-      </section>
-
-      <section id="meta-row" class="panel scene-section">
-        <div id="queue">
-          <h3>Upcoming</h3>
-          <div id="monster-queue"></div>
-        </div>
-
-        <div id="loot-section">
-          <h3>Loot (click to Equip / Use / Sell)</h3>
-          <div id="loot-list"></div>
-        </div>
-      </section>
-
-      <section id="log-section" class="panel scene-section">
-        <h3>Combat Log</h3>
-        <div id="combat-log"></div>
-      </section>
-
-    </main>
-
-    <footer>
-      <small>Full feature build • Enchants, Status Effects, Companions, Daily & Idle</small>
-    </footer>
-  </div>
-
-  <!-- FX layer for popups & particles -->
-  <div id="fx-layer"></div>
-
-  <script src="game.js"></script>
+  // Initialize game logic after short delay
+  setTimeout(() => {
+    const script = document.createElement("script");
+    script.src = "game.js";
+    document.body.appendChild(script);
+  }, 2500);
+}
+</script>
 </body>
 </html>
